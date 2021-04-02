@@ -1,8 +1,8 @@
 import java.util.Scanner;
 
 public class SampleNode extends ConnectionManager {
-    public SampleNode(String name) {
-        super(name, true);
+    public SampleNode(String name, String logName) {
+        super(name, true, true, logName);
     }
     
     @Override
@@ -10,12 +10,15 @@ public class SampleNode extends ConnectionManager {
         sendResponse(source, request);
     }
     
+    @Override
+    protected void handleMessage(String source, String message) {}
+    
     /**
      * A shell which sends user-specified requests and receives responses.
      * @param args arguments
      */
     public static void main(String[] args) {
-        SampleNode node = new SampleNode(args[0]);
+        SampleNode node = new SampleNode(args[0], args.length >= 2 ? args[1] : null);
         
         Scanner scanner = new Scanner(System.in);
         while (true) {
@@ -45,8 +48,8 @@ public class SampleNode extends ConnectionManager {
                 node.sendRequest(destination, request);
             } else {
                 System.out.println("Please input your message:");
-//                String message = scanner.next();
-//                node.sendMessage(destination, message);
+                String message = scanner.next();
+                node.sendMessage(destination, message);
             }
         }
     }
