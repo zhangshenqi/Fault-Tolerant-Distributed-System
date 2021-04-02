@@ -221,7 +221,7 @@ public abstract class ConnectionManager {
     }
     
     /**
-     * Handles the message from the source
+     * Handles the message from the source.
      * @param source the source in the distributed system
      * @param message message
      */

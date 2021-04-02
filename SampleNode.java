@@ -5,16 +5,26 @@ public class SampleNode extends ConnectionManager {
         super(name, true, true, logName);
     }
     
+    /**
+     * Handles the request from the source. Here we just echo the request.
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
     @Override
     protected void handleRequest(String source, String request) {
         sendResponse(source, request);
     }
     
+    /**
+     * Handles the message from the source. Here we do nothing.
+     * @param source the source in the distributed system
+     * @param message message
+     */
     @Override
     protected void handleMessage(String source, String message) {}
     
     /**
-     * A shell which sends user-specified requests and receives responses.
+     * A shell which allow users to test the connection manager.
      * @param args arguments
      */
     public static void main(String[] args) {
