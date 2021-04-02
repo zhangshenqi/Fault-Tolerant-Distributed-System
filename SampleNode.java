@@ -1,6 +1,17 @@
 import java.util.Scanner;
 
+/**
+ * A sample node which extends the connection manager.
+ * A shell is provided for testing the connection manager.
+ * @author Shenqi Zhang
+ *
+ */
 public class SampleNode extends ConnectionManager {
+    /**
+     * Constructs a sample node with specified name ane log name.
+     * @param name name of this sample node.
+     * @param logName name of the log file
+     */
     public SampleNode(String name, String logName) {
         super(name, true, true, logName);
     }
