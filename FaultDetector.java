@@ -1,0 +1,144 @@
+import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+public class FaultDetector extends ConnectionManager {
+    private List<String> parents;
+    private Map<String, AtomicInteger> childrenTolerance;
+    private int heartbeatInterval;
+    private int heartbeatTolerance;
+    
+    /**
+     * Constructs a fault detector with specified name and connection manager log name.
+     * @param name name of this sample node.
+     * @param logName name of the connection manager log file
+     */
+    public FaultDetector(String name, int heartbeatInterval, int heartbeatTolerance, String connectionManagerLogName) {
+        super(name, true, true, connectionManagerLogName);
+        this.heartbeatInterval = heartbeatInterval;
+        this.heartbeatTolerance = heartbeatTolerance;
+        parents = new ArrayList<String>();
+        childrenTolerance = new HashMap<String, AtomicInteger>();
+        RandomAccessFile file = null;
+        try {
+            file = new RandomAccessFile("fault_detector.conf", "r");
+            String line = null;
+            while ((line = file.readLine()) != null) {
+                int index1 = line.indexOf(':');
+                if (line.substring(0, index1).equals(name)) {
+                    int index2 = line.indexOf(':', index1 + 1);
+                    if (index2 > index1 + 1) {
+                        parents.addAll(Arrays.asList(line.substring(index1 + 1, index2).split(",")));
+                    }
+                    if (index2 < line.length() - 1) {
+                        String[] children = line.substring(index2 + 1).split(",");
+                        for (String child : children) {
+                            childrenTolerance.put(child, new AtomicInteger(0));
+                        }
+                    }
+                    break;
+                }
+            }
+        }  catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                file.close();
+            }  catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        
+        if (parents.size() > 0) {
+            new Thread(new HeartbeatSender()).start();
+        }
+        
+        if (childrenTolerance.size() > 0) {
+            new Thread(new ToleranceDecrementer()).start();
+        }
+    }
+    
+    @Override
+    protected void handleRequest(String source, String request) {
+        String[] strs = request.split(",");
+        String operation = strs[0];
+        String value = strs[1];
+        if (operation.equals("Alive") || operation.equals("Dead")) {
+            System.out.println(String.join("", value, " is ", operation.toLowerCase(), "."));
+            sendResponse(source, "ACK");
+            for (String parent : parents) {
+                sendRequest(parent, request);
+            }
+        }
+    }
+
+    @Override
+    protected void handleMessage(String source, String message) {
+        String[] strs = message.split(",");
+        String operation = strs[0];
+        if (operation.equals("Heartbeat")) {
+            if (childrenTolerance.containsKey(source)) {
+                AtomicInteger childTolerance = childrenTolerance.get(source);
+                if (childTolerance.getAndSet(heartbeatTolerance) <= 0) {
+                    System.out.println(source + " is alive.");
+                    for (String parent : parents) {
+                        sendRequest(parent, "Alive," + source);
+                    }
+                }
+            }
+        }
+    }
+    
+    private class HeartbeatSender implements Runnable {
+        @Override
+        public void run() {
+            while (true) {
+                for (String parent : parents) {
+                    sendMessage(parent, "Heartbeat");
+                }
+                try {
+                    Thread.sleep(heartbeatInterval);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+    
+    private class ToleranceDecrementer implements Runnable {
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    Thread.sleep(heartbeatInterval);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                for (String child : childrenTolerance.keySet()) {
+                    AtomicInteger childTolerance = childrenTolerance.get(child);
+                    if (childTolerance.get() > 0) {
+                        int updatedChildTolerance = childTolerance.decrementAndGet();
+                        if (updatedChildTolerance == 0) {
+                            System.out.println(child + " is dead.");
+                            for (String parent : parents) {
+                                sendRequest(parent, "Dead," + child);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * A shell which allow users to test the fault detector.
+     * @param args arguments
+     */
+    public static void main(String[] args) {
+        new FaultDetector(args[0], 1000, 3, args.length >= 2 ? args[1] : null);
+    }
+}
