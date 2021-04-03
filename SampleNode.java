@@ -8,7 +8,7 @@ import java.util.Scanner;
  */
 public class SampleNode extends ConnectionManager {
     /**
-     * Constructs a sample node with specified name ane log name.
+     * Constructs a sample node with specified name and log name.
      * @param name name of this sample node.
      * @param logName name of the log file
      */

@@ -35,7 +35,7 @@ public abstract class ConnectionManager {
     /**
      * Name of this node in the distributed system.
      */
-    private String name;
+    protected String name;
     /**
      * Peer nodes in the distributed system.
      */
@@ -71,7 +71,7 @@ public abstract class ConnectionManager {
         peers = new HashMap<String, Peer>();
         RandomAccessFile file = null;
         try {
-            file = new RandomAccessFile("peers.conf", "r");
+            file = new RandomAccessFile("connection_manager.conf", "r");
             String line = null;
             while ((line = file.readLine()) != null) {
                 String[] strs = line.split(":");
@@ -233,7 +233,7 @@ public abstract class ConnectionManager {
      * @param host host
      * @param text text
      */
-    private void printLog(OPERATION operation, String host, String text) {
+    private synchronized void printLog(OPERATION operation, String host, String text) {
         StringBuilder sb = new StringBuilder(new SimpleDateFormat("HH:mm:ss.SSS").format(new Date()));
         sb.append(' ').append(name);
         switch (operation) {
@@ -264,7 +264,7 @@ public abstract class ConnectionManager {
      * Prints the log.
      * @param text
      */
-    private void printLog(String text) {
+    private synchronized void printLog(String text) {
         logWriter.println(text);
     }
     
@@ -346,13 +346,10 @@ public abstract class ConnectionManager {
                     new Thread(new TCPClientHandler(socket)).start();
                 }
             } catch (IOException e) {
-                e.printStackTrace();
             } finally {
                 try {
                     serverSocket.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                } catch (IOException e) {}
             }
             
         }
@@ -381,9 +378,11 @@ public abstract class ConnectionManager {
          */
         @Override
         public void run() {
+            BufferedReader reader = null;
+            PrintWriter writer = null;
             try {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
+                reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                writer = new PrintWriter(socket.getOutputStream(), true);
                 String request = null, source = null;
                 boolean firstRequest = true;
                 while ((request = reader.readLine()) != null) {
@@ -398,7 +397,12 @@ public abstract class ConnectionManager {
                     handleRequest(source, request);
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+            } finally {
+                try {
+                    socket.close();
+                    reader.close();
+                } catch (IOException e) {}
+                writer.close();
             }
         }
     }
@@ -427,7 +431,8 @@ public abstract class ConnectionManager {
                     handleMessage(source, message);
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+            } finally {
+                datagramSocket.close();
             }
         }
     }
