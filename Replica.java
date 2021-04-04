@@ -46,7 +46,12 @@ public class Replica extends FaultDetector {
     protected void handleRequest(String source, String request) {
         String[] strs = request.split(",");
         String operation = strs[0];
-        if (operation.equals("Membership")) {
+        
+        if (operation.equals("HeartbeatInterval") || operation.equals("HeartbeatTolerance")) {
+            super.handleRequest(source, request);
+        }
+        
+        else if (operation.equals("Membership")) {
             sendResponse(source, "ACK");
             synchronized (membership) {
                 membership.clear();

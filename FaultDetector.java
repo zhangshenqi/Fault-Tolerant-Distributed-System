@@ -79,13 +79,29 @@ public class FaultDetector extends ConnectionManager {
     protected void handleRequest(String source, String request) {
         String[] strs = request.split(",");
         String operation = strs[0];
-        String value = strs[1];
-        if (operation.equals("Alive") || operation.equals("Dead")) {
-            System.out.println(String.join("", value, " is ", operation.toLowerCase(), "."));
+        
+        if (operation.equals("Alive")) {
+            System.out.println(strs[1] + " is alive.");
             sendResponse(source, "ACK");
-            for (String parent : parents) {
-                sendRequest(parent, request);
-            }
+            sendRequestsToParents(request);
+        }
+        
+        else if (operation.equals("Dead")) {
+            System.out.println(strs[1] + " is dead.");
+            sendResponse(source, "ACK");
+            sendRequestsToParents(request);
+        }
+        
+        else if (operation.equals("HeartbeatInterval")) {
+            sendResponse(source, "ACK");
+            setHeartbeatInterval(Integer.valueOf(strs[1]));
+            sendRequestsToChildren(request);
+        }
+        
+        else if (operation.equals("HeartbeatTolerance")) {
+            sendResponse(source, "ACK");
+            setHeartbeatTolerance(Integer.valueOf(strs[1]));
+            sendRequestsToChildren(request);
         }
     }
 
@@ -98,11 +114,33 @@ public class FaultDetector extends ConnectionManager {
                 AtomicInteger childTolerance = childrenTolerance.get(source);
                 if (childTolerance.getAndSet(heartbeatTolerance) <= 0) {
                     System.out.println(source + " is alive.");
-                    for (String parent : parents) {
-                        sendRequest(parent, "Alive," + source);
-                    }
+                    sendRequestsToParents("Alive," + source);
                 }
             }
+        }
+    }
+    
+    protected void sendRequestsToParents(String request) {
+        for (String parent : parents) {
+            sendRequest(parent, request);
+        }
+    }
+    
+    protected void sendRequestsToChildren(String request) {
+        for (String child : childrenTolerance.keySet()) {
+            sendRequest(child, request);
+        }
+    }
+    
+    protected void setHeartbeatInterval(int heartbeatInterval) {
+        if (heartbeatInterval > 0) {
+            this.heartbeatInterval = heartbeatInterval;
+        }
+    }
+    
+    protected void setHeartbeatTolerance(int heartbeatTolerance) {
+        if (heartbeatTolerance > 0) {
+            this.heartbeatTolerance = heartbeatTolerance;
         }
     }
     
@@ -137,9 +175,7 @@ public class FaultDetector extends ConnectionManager {
                         int updatedChildTolerance = childTolerance.decrementAndGet();
                         if (updatedChildTolerance == 0) {
                             System.out.println(child + " is dead.");
-                            for (String parent : parents) {
-                                sendRequest(parent, "Dead," + child);
-                            }
+                            sendRequestsToParents("Dead," + child);
                         }
                     }
                 }

@@ -101,8 +101,8 @@ public class ReplicaManager extends FaultDetector {
         Scanner scanner = new Scanner(System.in);
         while (true) {
             System.out.println();
-            System.out.println("1: change heartbeat interval");
-            System.out.println("2: change heartbeat tolerance");
+            System.out.println("1: set heartbeat interval");
+            System.out.println("2: set heartbeat tolerance");
             System.out.println("X: kill");
             System.out.println("Please input your operation:");
             String operation = scanner.next();
@@ -117,7 +117,27 @@ public class ReplicaManager extends FaultDetector {
                 continue;
             }
             
-            
+            if (operation.equals("1")) {
+                System.out.println("Please input heartbeat interval:");
+                String intervalStr = scanner.next();
+                int interval = Integer.valueOf(intervalStr);
+                if (interval <= 0) {
+                    System.out.println("Error: Invalid heartbeat interval!");
+                    continue;
+                }
+                node.setHeartbeatInterval(interval);
+                node.sendRequestsToChildren("HeartbeatInterval," + interval);
+            } else {
+                System.out.println("Please input heartbeat tolerance:");
+                String toleranceStr = scanner.next();
+                int tolerance = Integer.valueOf(toleranceStr);
+                if (tolerance <= 0) {
+                    System.out.println("Error: Invalid heartbeat tolerance!");
+                    continue;
+                }
+                node.setHeartbeatTolerance(tolerance);
+                node.sendRequestsToChildren("HeartbeatTolerance," + tolerance);
+            }
         }
     }
 }
