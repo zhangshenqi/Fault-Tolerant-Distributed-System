@@ -79,12 +79,12 @@ public abstract class ConnectionManager {
                 peers.put(strs[0], peer);
             }
             datagramSocket = new DatagramSocket(peers.get(name).backendPort);
-        }  catch (Exception e) {
+        }  catch (IOException e) {
             e.printStackTrace();
         } finally {
             try {
                 file.close();
-            }  catch (Exception e) {
+            }  catch (IOException e) {
                 e.printStackTrace();
             }
         }

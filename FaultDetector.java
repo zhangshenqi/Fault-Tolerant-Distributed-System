@@ -1,3 +1,4 @@
+import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,6 +12,18 @@ public class FaultDetector extends ConnectionManager {
     private Map<String, AtomicInteger> childrenTolerance;
     private int heartbeatInterval;
     private int heartbeatTolerance;
+    
+    public FaultDetector(String name) {
+        this(name, 1000, 3, null);
+    }
+    
+    public FaultDetector(String name, String connectionManagerLogName) {
+        this(name, 1000, 3, connectionManagerLogName);
+    }
+    
+    public FaultDetector(String name, int heartbeatInterval, int heartbeatTolerance) {
+        this(name, heartbeatInterval, heartbeatTolerance, null);
+    }
     
     /**
      * Constructs a fault detector with specified name and connection manager log name.
@@ -43,12 +56,12 @@ public class FaultDetector extends ConnectionManager {
                     break;
                 }
             }
-        }  catch (Exception e) {
+        }  catch (IOException e) {
             e.printStackTrace();
         } finally {
             try {
                 file.close();
-            }  catch (Exception e) {
+            }  catch (IOException e) {
                 e.printStackTrace();
             }
         }
@@ -139,6 +152,6 @@ public class FaultDetector extends ConnectionManager {
      * @param args arguments
      */
     public static void main(String[] args) {
-        new FaultDetector(args[0], 1000, 3, args.length >= 2 ? args[1] : null);
+        new FaultDetector(args[0], args.length >= 2 ? args[1] : null);
     }
 }
