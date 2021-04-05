@@ -1,11 +1,14 @@
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class Replica extends FaultDetector {
     protected String replicaManager;
     protected List<String> membership;
+    protected Map<String, Integer> data;
     
     public Replica(String name) {
         this(name, 1000, 3, null);
@@ -26,10 +29,18 @@ public class Replica extends FaultDetector {
      */
     public Replica(String name, int heartbeatInterval, int heartbeatTolerance, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, connectionManagerLogName);
+        data = new HashMap<String, Integer>();
         RandomAccessFile file = null;
         try {
             file = new RandomAccessFile("replica.conf", "r");
             replicaManager = file.readLine();
+            String line = null;
+            while ((line = file.readLine()) != null) {
+                int index = line.indexOf(':');
+                String key = line.substring(0, index);
+                int value = Integer.valueOf(line.substring(index + 1));
+                data.put(key, value);
+            }
         }  catch (IOException e) {
             e.printStackTrace();
         } finally {
