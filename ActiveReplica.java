@@ -34,15 +34,43 @@ public class ActiveReplica extends Replica {
         }
         
         else if (operation.equals("Membership")) {
-            boolean start = membership.size() == 0;
+            boolean start;
+            synchronized(membership) {
+                start = membership.size() == 0;
+            }
             super.handleRequest(source, request);
-            // If this is not the first replica, restore states and log.
-            if (start) {
-                if (membership.size() > 1) {
-                    // To do
+            synchronized(membership) {
+                if (start) {
+                    // If this is not the first replica, restore states and log.
+                    if (membership.size() > 1) {
+                        for (String member : membership) {
+                            if (member.equals(name)) {
+                                continue;
+                            }
+                            sendRequest(member, "Block");
+                        }
+                        String response;
+                        for (String member : membership) {
+                            if (member.equals(name)) {
+                                continue;
+                            }
+                            if ((response = sendRequest(member, "Restore")) != null) {
+                                int index = response.indexOf('|');
+                                restoreData(response.substring(0, index));
+                                restoreUserRequests(response.substring(index + 1));
+                                break;
+                            }
+                        }
+                        for (String member : membership) {
+                            if (member.equals(name)) {
+                                continue;
+                            }
+                            sendRequest(member, "Unblock");
+                        }
+                    }
+                    blocked = false;
+                    new Thread(new VoteInitiator()).start();
                 }
-                blocked = false;
-                new Thread(new VoteInitiator()).start();
             }
             round = 0;
         }
@@ -70,6 +98,7 @@ public class ActiveReplica extends Replica {
             sendResponse(source, "ACK");
             String userRequest = request.substring(request.indexOf(',') + 1);
             handleUserRequest(userRequest);
+            userRequests.remove(userRequest);
             synchronized(membership) {
                 round = (round + 1) % membership.size();
             }
@@ -80,6 +109,35 @@ public class ActiveReplica extends Replica {
             synchronized(membership) {
                 round = (round + 1) % membership.size();
             }
+        }
+        
+        else if (operation.equals("Block")) {
+            sendResponse(source, "ACK");
+            blocked = true;
+        }
+        
+        else if (operation.equals("Unblock")) {
+            sendResponse(source, "ACK");
+            blocked = false;
+        }
+        
+        else if (operation.equals("Restore")) {
+            StringBuilder sb = new StringBuilder();
+            synchronized(data) {
+                for (String key : data.keySet()) {
+                    sb.append(key).append(data.get(key)).append(',');
+                }
+            }
+            if (sb.length() > 0) {
+                sb.setLength(sb.length() - 1);
+            }
+            synchronized(userRequests) {
+                for (String userRequest : userRequests) {
+                    sb.append('|').append(userRequest);
+                }
+            }
+            String response = sb.toString();
+            sendResponse(source, response);
         }
     }
     
@@ -130,6 +188,25 @@ public class ActiveReplica extends Replica {
         }
     }
     
+    private void restoreData(String response) {
+        String[] strs = response.split(",");
+        synchronized(data) {
+            data.clear();
+            for (int i = 1; i < strs.length; i += 2) {
+                String key = strs[i];
+                int value = Integer.valueOf(strs[i + 1]);
+                data.put(key, value);
+            }
+        }
+    }
+    
+    private void restoreUserRequests(String response) {
+        String[] requests = response.split("|");
+        for (String request : requests) {
+            userRequests.add(request);
+        }
+    }
+    
     private class VoteInitiator implements Runnable {
         @Override
         public void run() {
@@ -161,6 +238,7 @@ public class ActiveReplica extends Replica {
                     }
                     if (numFavor > membership.size() / 2) {
                         handleUserRequest(userRequest);
+                        userRequests.remove(userRequest);
                         decisionRequest = "Do," + userRequest;
                     } else {
                         decisionRequest = "GiveUp," + userRequest;
