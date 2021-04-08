@@ -1,9 +1,12 @@
 import java.util.LinkedHashSet;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class ActiveReplica extends Replica {
-    private boolean blocked;
     private int round;
     private LinkedHashSet<String> userRequests;
+    private final ReentrantReadWriteLock userRequestsLock;
+    private boolean blocked;
+    private final Object blockingObject;
     
     public ActiveReplica(String name) {
         this(name, 1000, 3, 5000, null);
@@ -19,9 +22,11 @@ public class ActiveReplica extends Replica {
     
     public ActiveReplica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, connectionManagerLogName);
-        blocked = true;
         round = 0;
         userRequests = new LinkedHashSet<String>();
+        userRequestsLock = new ReentrantReadWriteLock();
+        blocked = false;
+        blockingObject = new Object();
     }
     
     @Override
@@ -56,8 +61,23 @@ public class ActiveReplica extends Replica {
                             }
                             if ((response = sendRequest(member, "Restore")) != null) {
                                 int index = response.indexOf('|');
-                                restoreData(response.substring(0, index));
-                                restoreUserRequests(response.substring(index + 1));
+                                
+                                // Empty user requests.
+                                if (index < 0) {
+                                    restoreData(response);
+                                }
+                                
+                                // Empty data.
+                                else if (index == 0) {
+                                    restoreUserRequests(response);
+                                }
+                                
+                                // Both user requests and data are not empty
+                                else {
+                                    restoreData(response.substring(0, index));
+                                    restoreUserRequests(response.substring(index + 1));
+                                }
+                                
                                 break;
                             }
                         }
@@ -68,7 +88,6 @@ public class ActiveReplica extends Replica {
                             sendRequest(member, "Unblock");
                         }
                     }
-                    blocked = false;
                     new Thread(new VoteInitiator()).start();
                 }
             }
@@ -119,13 +138,16 @@ public class ActiveReplica extends Replica {
         else if (operation.equals("Unblock")) {
             sendResponse(source, "ACK");
             blocked = false;
+            synchronized(blockingObject) {
+                blockingObject.notify();
+            }
         }
         
         else if (operation.equals("Restore")) {
             StringBuilder sb = new StringBuilder();
             synchronized(data) {
                 for (String key : data.keySet()) {
-                    sb.append(key).append(data.get(key)).append(',');
+                    sb.append(key).append(',').append(data.get(key)).append(',');
                 }
             }
             if (sb.length() > 0) {
@@ -192,7 +214,7 @@ public class ActiveReplica extends Replica {
         String[] strs = response.split(",");
         synchronized(data) {
             data.clear();
-            for (int i = 1; i < strs.length; i += 2) {
+            for (int i = 0; i < strs.length; i += 2) {
                 String key = strs[i];
                 int value = Integer.valueOf(strs[i + 1]);
                 data.put(key, value);
@@ -208,23 +230,54 @@ public class ActiveReplica extends Replica {
     }
     
     private class VoteInitiator implements Runnable {
+        public boolean blocked() {
+            if (blocked) {
+                return true;
+            }
+            
+            membershipLock.readLock().lock();
+            try {
+                if (round >= membership.size() || !membership.get(round).equals(name)) {
+                    return true;
+                }
+            } finally {
+                membershipLock.readLock().unlock();
+            }
+            
+            userRequestsLock.readLock().lock();
+            try {
+                return userRequests.isEmpty();
+            } finally {
+                userRequestsLock.readLock().unlock();
+            }
+        }
+        
         @Override
         public void run() {
             String userRequest, decisionRequest;
             while (true) {
-                if (blocked) {
-                    continue;
+                synchronized(blockingObject) {
+                    while (blocked == true) {
+                        try {
+                            blockingObject.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
                 }
+                
                 synchronized(membership) {
                     if (round >= membership.size() || !membership.get(round).equals(name)) {
                         continue;
                     }
+                    
                     synchronized(userRequests) {
                         if (userRequests.isEmpty()) {
                             continue;
                         }
                         userRequest = userRequests.iterator().next();
                     }
+                    System.out.println(userRequest);
                     round = (round + 1) % membership.size();
                     int numFavor = 1;
                     for (String member : membership) {

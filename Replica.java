@@ -4,11 +4,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Replica extends FaultDetector {
     protected String replicaManager;
     protected List<String> membership;
     protected Map<String, Integer> data;
+    protected final ReentrantReadWriteLock membershipLock;
     
     public Replica(String name) {
         this(name, 1000, 3, null);
@@ -51,6 +53,7 @@ public class Replica extends FaultDetector {
             }
         }
         membership = new ArrayList<String>();
+        membershipLock = new ReentrantReadWriteLock();
     }
     
     @Override
