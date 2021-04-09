@@ -11,6 +11,8 @@ public class Replica extends FaultDetector {
     protected List<String> membership;
     protected Map<String, Integer> data;
     protected final ReentrantReadWriteLock membershipLock;
+    protected final ReentrantReadWriteLock dataLock;
+    protected final ReentrantReadWriteLock userRequestsLock;
     
     public Replica(String name) {
         this(name, 1000, 3, null);
@@ -54,6 +56,8 @@ public class Replica extends FaultDetector {
         }
         membership = new ArrayList<String>();
         membershipLock = new ReentrantReadWriteLock();
+        dataLock = new ReentrantReadWriteLock();
+        userRequestsLock = new ReentrantReadWriteLock();
     }
     
     @Override
@@ -67,11 +71,14 @@ public class Replica extends FaultDetector {
         
         else if (operation.equals("Membership")) {
             sendResponse(source, "ACK");
-            synchronized (membership) {
+            membershipLock.writeLock().lock();
+            try {
                 membership.clear();
                 for (int i = 1; i < strs.length; i++) {
                     membership.add(strs[i]);
                 }
+            } finally {
+                membershipLock.writeLock().unlock();
             }
         }
     }
