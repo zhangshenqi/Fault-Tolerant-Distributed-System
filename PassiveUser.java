@@ -29,6 +29,6 @@ public class PassiveUser extends User {
 
     public static void main(String[] args) {
         PassiveUser node = new PassiveUser(args[0], args.length >= 2 ? args[1] : null);
-        manualTest(node);
+        test(node);
     }
 }

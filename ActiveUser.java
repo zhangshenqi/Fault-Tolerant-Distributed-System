@@ -71,6 +71,6 @@ public class ActiveUser extends User {
     
     public static void main(String[] args) {
         ActiveUser node = new ActiveUser(args[0], args.length >= 2 ? args[1] : null);
-        manualTest(node);
+        test(node);
     }
 }
