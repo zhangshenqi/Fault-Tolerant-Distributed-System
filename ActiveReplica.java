@@ -371,7 +371,7 @@ public class ActiveReplica extends Replica {
                             numFavor++;
                         }
                     }
-                    if (numFavor > membership.size() / 2) {
+                    if (numFavor == membership.size()) {
                         handleUserRequest(userRequest);
                         userRequestsLock.writeLock().lock();
                         try {
