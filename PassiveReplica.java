@@ -100,7 +100,7 @@ public class PassiveReplica extends Replica {
                 try {
                     if (data.containsKey(key)) {
                         data.put(key, data.get(key) + 1);
-                        response = "Increment successfully.";
+                        response = String.valueOf(data.get(key));
                     } else {
                         response = "No such key.";
                     }
@@ -127,7 +127,7 @@ public class PassiveReplica extends Replica {
                 try {
                     if (data.containsKey(key)) {
                         data.put(key, data.get(key) - 1);
-                        response = "Decrement successfully.";
+                        response = String.valueOf(data.get(key));
                     } else {
                         response = "No such key.";
                     }
