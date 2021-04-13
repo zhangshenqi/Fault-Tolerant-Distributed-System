@@ -191,6 +191,7 @@ public abstract class ConnectionManager {
         Peer peer = peers.get(source);
         if (peer.serverWriter == null) {
             printLog("Error: No such connection!");
+            return;
         }
         
         peer.serverWriter.println(response);

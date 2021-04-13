@@ -3,7 +3,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class PassiveReplica extends Replica {
     boolean primary;
     private ConcurrentLinkedQueue<String> userRequests;
-    int checkpointInterval;
     
     public PassiveReplica(String name) {
         this(name, 1000, 3, 5000, null);
@@ -18,10 +17,9 @@ public class PassiveReplica extends Replica {
     }
     
     public PassiveReplica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
-        super(name, heartbeatInterval, heartbeatTolerance, connectionManagerLogName);
+        super(name, heartbeatInterval, heartbeatTolerance, checkpointInterval, connectionManagerLogName);
         primary = false;
         userRequests = new ConcurrentLinkedQueue<String>();
-        this.checkpointInterval = checkpointInterval;
     }
     
     @Override
@@ -69,11 +67,6 @@ public class PassiveReplica extends Replica {
             } finally {
                 dataLock.writeLock().unlock();
             }
-        }
-        
-        else if (operation.equals("CheckpointInterval")) {
-            sendResponse(source, "ACK");
-            checkpointInterval = Integer.valueOf(strs[1]);
         }
         
         else if (operation.equals("Get")) {

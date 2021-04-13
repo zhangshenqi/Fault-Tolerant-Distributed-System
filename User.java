@@ -80,7 +80,7 @@ public abstract class User extends ConnectionManager {
             } else {
                 sb.append("Decrement,");
             }
-            sb.append(key);
+            sb.append(key).append(',').append(System.currentTimeMillis());
             String request = sb.toString();
             String response = node.sendRequestToReplicas(request);
             System.out.println(response);
@@ -106,7 +106,7 @@ public abstract class User extends ConnectionManager {
                 System.out.println("Error: Invalid operation!");
                 continue;
             }
-            sb.append((char) (random.nextInt(3) + 'A'));
+            sb.append((char) (random.nextInt(3) + 'A')).append(',').append(System.currentTimeMillis());
             String request = sb.toString();
             String response = node.sendRequestToReplicas(request);
             System.out.println(response);

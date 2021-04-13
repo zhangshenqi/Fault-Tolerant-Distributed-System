@@ -6,7 +6,6 @@ import java.util.Scanner;
 import java.util.Set;
 
 public class ReplicaManager extends FaultDetector {
-    private boolean passive;
     private Set<String> replicas;
     private LinkedHashSet<String> membership;
     
@@ -33,15 +32,7 @@ public class ReplicaManager extends FaultDetector {
         RandomAccessFile file = null;
         try {
             file = new RandomAccessFile("replica_manager.conf", "r");
-            String line = file.readLine().trim().toLowerCase();
-            if (line.equals("passive")) {
-                passive = true;
-            } else if (line.equals("active")) {
-                passive = false;
-            } else {
-                throw new IllegalArgumentException("Error: Invalid replica_manager.conf!");
-            }
-            line = file.readLine();
+            String line = file.readLine();
             for (String replica : line.split(",")) {
                 replicas.add(replica);
             }
@@ -147,9 +138,7 @@ public class ReplicaManager extends FaultDetector {
             System.out.println();
             System.out.println("1: set heartbeat interval");
             System.out.println("2: set heartbeat tolerance");
-            if (node.passive) {
-                System.out.println("3: set checkpoint interval");
-            }
+            System.out.println("3: set checkpoint interval");
             System.out.println("X: kill");
             System.out.println("Please input your operation:");
             String operation = scanner.next();

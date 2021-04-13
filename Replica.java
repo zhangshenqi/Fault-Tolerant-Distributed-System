@@ -10,20 +10,21 @@ public class Replica extends FaultDetector {
     protected String replicaManager;
     protected List<String> membership;
     protected Map<String, Integer> data;
+    protected int checkpointInterval;
     protected final ReentrantReadWriteLock membershipLock;
     protected final ReentrantReadWriteLock dataLock;
     protected final ReentrantReadWriteLock userRequestsLock;
     
     public Replica(String name) {
-        this(name, 1000, 3, null);
+        this(name, 1000, 3, 5000, null);
     }
     
     public Replica(String name, String connectionManagerLogName) {
-        this(name, 1000, 3, connectionManagerLogName);
+        this(name, 1000, 3, 5000, connectionManagerLogName);
     }
     
-    public Replica(String name, int heartbeatInterval, int heartbeatTolerance) {
-        this(name, heartbeatInterval, heartbeatTolerance, null);
+    public Replica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval) {
+        this(name, heartbeatInterval, heartbeatTolerance, checkpointInterval, null);
     }
     
     /**
@@ -31,8 +32,9 @@ public class Replica extends FaultDetector {
      * @param name name of this sample node.
      * @param logName name of the connection manager log file
      */
-    public Replica(String name, int heartbeatInterval, int heartbeatTolerance, String connectionManagerLogName) {
+    public Replica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, connectionManagerLogName);
+        this.checkpointInterval = checkpointInterval;
         data = new HashMap<String, Integer>();
         RandomAccessFile file = null;
         try {
@@ -81,6 +83,22 @@ public class Replica extends FaultDetector {
                 membershipLock.writeLock().unlock();
             }
         }
+        
+        else if (operation.equals("CheckpointInterval")) {
+            sendResponse(source, "ACK");
+            checkpointInterval = Integer.valueOf(strs[1]);
+        }
+    }
+    
+    protected String getCheckpoint() {
+        StringBuilder sb = new StringBuilder();
+        for (String key : data.keySet()) {
+            sb.append(key).append(',').append(data.get(key)).append(',');
+        }
+        if (sb.length() > 0) {
+            sb.setLength(sb.length() - 1);
+        }
+        return sb.toString();
     }
     
     public static void main(String[] args) {
