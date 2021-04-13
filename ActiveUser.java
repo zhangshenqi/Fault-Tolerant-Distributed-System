@@ -38,6 +38,7 @@ public class ActiveUser extends User {
         
         if (responses.size() > 1) {
             System.out.println("Error: Responses are different!");
+            System.exit(0);
         }
         
         if (responses.size() == 0) {
