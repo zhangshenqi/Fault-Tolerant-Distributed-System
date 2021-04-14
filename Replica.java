@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Replica extends FaultDetector {
+    protected boolean primary;
     protected String replicaManager;
     protected List<String> membership;
     protected Map<String, Integer> data;
@@ -56,6 +57,7 @@ public class Replica extends FaultDetector {
                 e.printStackTrace();
             }
         }
+        primary = false;
         membership = new ArrayList<String>();
         membershipLock = new ReentrantReadWriteLock();
         dataLock = new ReentrantReadWriteLock();

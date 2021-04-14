@@ -1,21 +1,17 @@
 import java.util.LinkedHashSet;
 import java.util.Scanner;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class ActiveReplica extends Replica {
     private LinkedHashSet<String> userRequests;
-    private int round;
     private boolean blocked;
     private boolean restored;
     private String checkpoint;
     private StringBuilder logBuilder;
     private final ReentrantReadWriteLock checkpointLock;
     private final ReentrantReadWriteLock logBuilderLock;
-    private final ReentrantLock voteLock;
     private final Object restorationObj;
     private final Object otherObj;
-    private final Object roundObj;
     private final Object userRequestsObj;
     
     public ActiveReplica(String name) {
@@ -32,7 +28,6 @@ public class ActiveReplica extends Replica {
     
     public ActiveReplica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, checkpointInterval, connectionManagerLogName);
-        round = 0;
         userRequests = new LinkedHashSet<String>();
         blocked = false;
         restored = false;
@@ -40,10 +35,8 @@ public class ActiveReplica extends Replica {
         logBuilder = new StringBuilder();
         checkpointLock = new ReentrantReadWriteLock();
         logBuilderLock = new ReentrantReadWriteLock();
-        voteLock = new ReentrantLock();
         restorationObj = new Object();
         otherObj = new Object();
-        roundObj = new Object();
         userRequestsObj = new Object();
     }
     
@@ -57,13 +50,10 @@ public class ActiveReplica extends Replica {
         }
         
         else if (operation.equals("Membership")) {
-            boolean start;
-            synchronized(membership) {
-                start = membership.size() == 0;
-            }
-            super.handleRequest(source, request);
-            synchronized(membership) {
-                if (start) {
+            membershipLock.writeLock().lock();
+            try {
+                super.handleRequest(source, request);
+                if (!restored) {
                     // If this is not the first replica, restore states and log.
                     if (membership.size() > 1) {
                         for (String member : membership) {
@@ -80,15 +70,12 @@ public class ActiveReplica extends Replica {
                             if ((response = sendRequest(member, "Restore")) != null) {
                                 int index1 = response.indexOf('|');
                                 int index2 = response.indexOf('|', index1 + 1);
-                                int index3 = response.indexOf('|', index2 + 1);
                                 String checkpointResponse = index1 == 0 ? "" : response.substring(0, index1);
                                 String logResponse = index2 == index1 + 1 ? "" : response.substring(index1 + 1, index2);
-                                String userRequestsResponse = index3 == index2 + 1 ? "" : response.substring(index2 + 1, index3);
-                                String roundResponse = response.substring(index3 + 1);
+                                String userRequestsResponse = index2 == response.length() - 1 ? "" : response.substring(index2 + 1);
                                 restoreData(checkpointResponse, logResponse);
                                 checkpoint = getCheckpoint();
                                 restoreUserRequests(userRequestsResponse);
-                                round = Integer.valueOf(roundResponse);
                                 break;
                             }
                         }
@@ -99,17 +86,18 @@ public class ActiveReplica extends Replica {
                             sendRequest(member, "Unblock");
                         }
                     }
-                    new Thread(new CheckpointUpdater()).start();
-                    new Thread(new VoteInitiator()).start();
-                } else {
-                    synchronized(roundObj) {
-                        roundObj.notify();
+                    restored = true;
+                    synchronized(restorationObj) {
+                        restorationObj.notify();
                     }
+                    new Thread(new CheckpointUpdater()).start();
                 }
-                restored = true;
-                synchronized(restorationObj) {
-                    restorationObj.notify();
+                if (!primary && membership.get(0).equals(name)) {
+                    primary = true;
+                    new Thread(new VoteInitiator()).start();
                 }
+            } finally {
+                membershipLock.writeLock().unlock();
             }
         }
         
@@ -127,7 +115,6 @@ public class ActiveReplica extends Replica {
         
         else if (operation.equals("Vote")) {
             waitForRestoration();
-            voteLock.lock();
             String userRequest = request.substring(request.indexOf(',') + 1);
             String response;
             userRequestsLock.readLock().lock();
@@ -153,22 +140,10 @@ public class ActiveReplica extends Replica {
             } finally {
                 userRequestsLock.writeLock().unlock();
             }
-            round = round == Integer.MAX_VALUE ? 0 : round + 1;
-            System.out.println("After do round = " + round);
-            voteLock.unlock();
-            synchronized(roundObj) {
-                roundObj.notify();
-            }
         }
         
         else if (operation.equals("GiveUp")) {
             sendResponse(source, "ACK");
-            round = round == Integer.MAX_VALUE ? 0 : round + 1;
-            System.out.println("After giveup round = " + round);
-            voteLock.unlock();
-            synchronized(roundObj) {
-                roundObj.notify();
-            }
         }
         
         else if (operation.equals("Block")) {
@@ -213,14 +188,6 @@ public class ActiveReplica extends Replica {
             } finally {
                 userRequestsLock.readLock().unlock();
             }
-            
-            if (sb.charAt(sb.length() - 1) == ';') {
-                sb.setCharAt(sb.length() - 1, '|');
-            } else {
-                sb.append('|');
-            }
-            
-            sb.append(round);
             
             String response = sb.toString();
             sendResponse(source, response);
@@ -415,30 +382,6 @@ public class ActiveReplica extends Replica {
             }
         }
         
-        private boolean blockedForRound() {
-            membershipLock.readLock().lock();
-            try {
-                if (membership.get(round % membership.size()).equals(name)) {
-                    return false;
-                }
-                return true;
-            } finally {
-                membershipLock.readLock().unlock();
-            }
-        }
-        
-        private void waitForRound() {
-            synchronized(roundObj) {
-                while (blockedForRound()) {
-                    try {
-                        roundObj.wait();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        }
-        
         private boolean blockedForUserRequests() {
             userRequestsLock.readLock().lock();
             try {
@@ -465,7 +408,6 @@ public class ActiveReplica extends Replica {
             String userRequest, decisionRequest;
             while (true) {
                 waitForOther();
-                waitForRound();
                 waitForUserRequests();
                 
                 userRequestsLock.writeLock().lock();
@@ -475,7 +417,6 @@ public class ActiveReplica extends Replica {
                     userRequestsLock.writeLock().unlock();
                 }
                 
-                voteLock.lock();
                 membershipLock.readLock().lock();
                 try {
                     int numFavor = 1;
@@ -506,18 +447,11 @@ public class ActiveReplica extends Replica {
                         }
                         sendRequest(member, decisionRequest);
                     }
-                    round = round == Integer.MAX_VALUE ? 0 : round + 1;
-                    System.out.println("After vote round = " + round);
                 } finally {
-                    voteLock.unlock();
                     membershipLock.readLock().unlock();
                 }
             }
         }
-    }
-    
-    private void printRound() {
-        System.out.println(round);
     }
     
     private void printUserRequests() {
@@ -538,8 +472,7 @@ public class ActiveReplica extends Replica {
         Scanner scanner = new Scanner(System.in);
         while (true) {
             System.out.println();
-            System.out.println("1: get round");
-            System.out.println("2: get user requests");
+            System.out.println("1: get user requests");
             System.out.println("X: kill");
             System.out.println("Please input your operation:");
             String operation = scanner.next();
@@ -550,8 +483,6 @@ public class ActiveReplica extends Replica {
             }
             
             if (operation.equals("1")) {
-                node.printRound();
-            } else if (operation.equals("2")) {
                 node.printUserRequests();
             } else {
                 System.out.println("Error: Invalid operation!");

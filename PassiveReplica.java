@@ -1,7 +1,6 @@
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class PassiveReplica extends Replica {
-    boolean primary;
     private ConcurrentLinkedQueue<String> userRequests;
     
     public PassiveReplica(String name) {
@@ -18,7 +17,6 @@ public class PassiveReplica extends Replica {
     
     public PassiveReplica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, checkpointInterval, connectionManagerLogName);
-        primary = false;
         userRequests = new ConcurrentLinkedQueue<String>();
     }
     
