@@ -229,6 +229,35 @@ public abstract class ConnectionManager {
     protected abstract void handleMessage(String source, String message);
     
     /**
+     * Get the parameters from the specified configuration file.
+     * @param fileName the name of the specified configuration file
+     * @return parameters
+     */
+    protected Map<String, String> getParameters(String fileName) {
+        Map<String, String> parameters = new HashMap<String, String>();
+        RandomAccessFile file = null;
+        try {
+            file = new RandomAccessFile(fileName, "r");
+            String line = null;
+            while ((line = file.readLine()) != null) {
+                int index = line.indexOf('=');
+                String key = line.substring(0, index).trim();
+                String value = line.substring(index + 1).trim();
+                parameters.put(key, value);
+            }
+        }  catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                file.close();
+            }  catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return parameters;
+    }
+    
+    /**
      * Prints the log.
      * @param operation operation
      * @param host host
