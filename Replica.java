@@ -26,11 +26,6 @@ public class Replica extends FaultDetector {
         this(name, heartbeatInterval, heartbeatTolerance, checkpointInterval, null);
     }
     
-    /**
-     * Constructs a fault detector with specified name and connection manager log name.
-     * @param name name of this sample node.
-     * @param logName name of the connection manager log file
-     */
     public Replica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, connectionManagerLogName);
         Map<String, String> parameters = getParameters("replica.conf");
@@ -59,8 +54,12 @@ public class Replica extends FaultDetector {
             super.handleRequest(source, request);
         }
         
-        else if (operation.equals("Membership")) {
+        else if (operation.equals("CheckpointInterval")) {
+            checkpointInterval = Integer.valueOf(strs[1]);
             sendResponse(source, "ACK");
+        }
+        
+        else if (operation.equals("Membership")) {
             membershipLock.writeLock().lock();
             try {
                 membership.clear();
@@ -70,22 +69,20 @@ public class Replica extends FaultDetector {
             } finally {
                 membershipLock.writeLock().unlock();
             }
-        }
-        
-        else if (operation.equals("CheckpointInterval")) {
             sendResponse(source, "ACK");
-            checkpointInterval = Integer.valueOf(strs[1]);
         }
     }
     
     protected String getCheckpoint() {
+        if (data.isEmpty()) {
+            return "";
+        }
+        
         StringBuilder sb = new StringBuilder();
         for (String key : data.keySet()) {
             sb.append(key).append(',').append(data.get(key)).append(',');
         }
-        if (sb.length() > 0) {
-            sb.setLength(sb.length() - 1);
-        }
+        sb.setLength(sb.length() - 1);
         return sb.toString();
     }
     

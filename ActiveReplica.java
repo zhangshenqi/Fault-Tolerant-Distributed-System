@@ -4,14 +4,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class ActiveReplica extends Replica {
     private LinkedHashSet<String> userRequests;
-    private boolean blocked;
-    private boolean restored;
     private String checkpoint;
     private StringBuilder logBuilder;
+    private boolean restored;
+    private boolean quiescent;
     private final ReentrantReadWriteLock checkpointLock;
     private final ReentrantReadWriteLock logBuilderLock;
     private final Object restorationObj;
-    private final Object otherObj;
+    private final Object quiescenceObj;
     private final Object userRequestsObj;
     
     public ActiveReplica(String name) {
@@ -28,16 +28,16 @@ public class ActiveReplica extends Replica {
     
     public ActiveReplica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, checkpointInterval, connectionManagerLogName);
-        userRequests = new LinkedHashSet<String>();
-        blocked = false;
-        restored = false;
-        checkpoint = getCheckpoint();
-        logBuilder = new StringBuilder();
-        checkpointLock = new ReentrantReadWriteLock();
-        logBuilderLock = new ReentrantReadWriteLock();
-        restorationObj = new Object();
-        otherObj = new Object();
-        userRequestsObj = new Object();
+        this.userRequests = new LinkedHashSet<String>();
+        this.checkpoint = getCheckpoint();
+        this.logBuilder = new StringBuilder();
+        this.restored = false;
+        this.quiescent = false;
+        this.checkpointLock = new ReentrantReadWriteLock();
+        this.logBuilderLock = new ReentrantReadWriteLock();
+        this.restorationObj = new Object();
+        this.quiescenceObj = new Object();
+        this.userRequestsObj = new Object();
     }
     
     @Override
@@ -45,16 +45,19 @@ public class ActiveReplica extends Replica {
         String[] strs = request.split(",");
         String operation = strs[0];
         
-        if (operation.equals("HeartbeatInterval") || operation.equals("HeartbeatTolerance")) {
+        if (operation.equals("HeartbeatInterval") || operation.equals("HeartbeatTolerance") || operation.equals("CheckpointInterval")) {
             super.handleRequest(source, request);
         }
         
         else if (operation.equals("Membership")) {
             membershipLock.writeLock().lock();
             try {
-                super.handleRequest(source, request);
+                membership.clear();
+                for (int i = 1; i < strs.length; i++) {
+                    membership.add(strs[i]);
+                }
+                
                 if (!restored) {
-                    // If this is not the first replica, restore states and log.
                     if (membership.size() > 1) {
                         for (String member : membership) {
                             if (member.equals(name)) {
@@ -62,6 +65,7 @@ public class ActiveReplica extends Replica {
                             }
                             sendRequest(member, "Block");
                         }
+                        
                         String response;
                         for (String member : membership) {
                             if (member.equals(name)) {
@@ -79,6 +83,7 @@ public class ActiveReplica extends Replica {
                                 break;
                             }
                         }
+                        
                         for (String member : membership) {
                             if (member.equals(name)) {
                                 continue;
@@ -86,12 +91,14 @@ public class ActiveReplica extends Replica {
                             sendRequest(member, "Unblock");
                         }
                     }
+                    
                     restored = true;
                     synchronized(restorationObj) {
                         restorationObj.notify();
                     }
                     new Thread(new CheckpointUpdater()).start();
                 }
+                
                 if (!primary && membership.get(0).equals(name)) {
                     primary = true;
                     new Thread(new VoteInitiator()).start();
@@ -99,6 +106,7 @@ public class ActiveReplica extends Replica {
             } finally {
                 membershipLock.writeLock().unlock();
             }
+            sendResponse(source, "ACK");
         }
         
         else if (operation.equals("Get") || operation.equals("Increment") || operation.equals("Decrement")) {
@@ -131,7 +139,6 @@ public class ActiveReplica extends Replica {
         }
         
         else if (operation.equals("Do")) {
-            sendResponse(source, "ACK");
             String userRequest = request.substring(request.indexOf(',') + 1);
             handleUserRequest(userRequest);
             userRequestsLock.writeLock().lock();
@@ -140,6 +147,7 @@ public class ActiveReplica extends Replica {
             } finally {
                 userRequestsLock.writeLock().unlock();
             }
+            sendResponse(source, "ACK");
         }
         
         else if (operation.equals("GiveUp")) {
@@ -147,16 +155,16 @@ public class ActiveReplica extends Replica {
         }
         
         else if (operation.equals("Block")) {
+            quiescent = true;
             sendResponse(source, "ACK");
-            blocked = true;
         }
         
         else if (operation.equals("Unblock")) {
-            sendResponse(source, "ACK");
-            blocked = false;
-            synchronized(otherObj) {
-                otherObj.notify();
+            quiescent = false;
+            synchronized(quiescenceObj) {
+                quiescenceObj.notify();
             }
+            sendResponse(source, "ACK");
         }
         
         else if (operation.equals("Restore")) {
@@ -198,9 +206,9 @@ public class ActiveReplica extends Replica {
         String[] strs = request.split(",");
         String source = strs[0];
         String operation = strs[1];
+        String key = strs[2];
         
         if (operation.equals("Get")) {
-            String key = strs[2];
             String response;
             dataLock.readLock().lock();
             logBuilderLock.writeLock().lock();
@@ -219,7 +227,6 @@ public class ActiveReplica extends Replica {
         }
         
         else if (operation.equals("Increment")) {
-            String key = strs[2];
             String response;
             dataLock.writeLock().lock();
             logBuilderLock.writeLock().lock();
@@ -239,7 +246,6 @@ public class ActiveReplica extends Replica {
         }
         
         else if (operation.equals("Decrement")) {
-            String key = strs[2];
             String response;
             dataLock.writeLock().lock();
             logBuilderLock.writeLock().lock();
@@ -323,15 +329,43 @@ public class ActiveReplica extends Replica {
         }
     }
     
-    private boolean blockedForRestoration() {
-        return !restored;
-    }
-    
     private void waitForRestoration() {
         synchronized(restorationObj) {
-            while (blockedForRestoration()) {
+            while (!restored) {
                 try {
                     restorationObj.wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+    
+    private void waitForQuiescence() {
+        synchronized(quiescenceObj) {
+            while (quiescent) {
+                try {
+                    quiescenceObj.wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+    
+    private void waitForUserRequests() {
+        synchronized(userRequestsObj) {
+            while (true) {
+                userRequestsLock.readLock().lock();
+                try {
+                    if (!userRequests.isEmpty()) {
+                        break;
+                    }
+                } finally {
+                    userRequestsLock.readLock().unlock();
+                }
+                try {
+                    userRequestsObj.wait();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -352,8 +386,8 @@ public class ActiveReplica extends Replica {
                 dataLock.readLock().lock();
                 logBuilderLock.writeLock().lock();
                 try {
-//                    System.out.println("checkpoint: " + checkpoint);
-//                    System.out.println("log: " + logBuilder.toString());
+                    System.out.println("checkpoint: " + checkpoint);
+                    System.out.println("log: " + logBuilder.toString());
                     checkpoint = getCheckpoint();
                     logBuilder.setLength(0);
                 } finally {
@@ -366,48 +400,11 @@ public class ActiveReplica extends Replica {
     }
     
     private class VoteInitiator implements Runnable {
-        private boolean blockedForOther() {
-            return blocked;
-        }
-        
-        private void waitForOther() {
-            synchronized(otherObj) {
-                while (blockedForOther()) {
-                    try {
-                        otherObj.wait();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        }
-        
-        private boolean blockedForUserRequests() {
-            userRequestsLock.readLock().lock();
-            try {
-                return userRequests.isEmpty();
-            } finally {
-                userRequestsLock.readLock().unlock();
-            }
-        }
-        
-        private void waitForUserRequests() {
-            synchronized(userRequestsObj) {
-                while (blockedForUserRequests()) {
-                    try {
-                        userRequestsObj.wait();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        }
-        
         @Override
         public void run() {
             String userRequest, decisionRequest;
             while (true) {
-                waitForOther();
+                waitForQuiescence();
                 waitForUserRequests();
                 
                 userRequestsLock.writeLock().lock();
@@ -429,6 +426,7 @@ public class ActiveReplica extends Replica {
                             numFavor++;
                         }
                     }
+                    
                     if (numFavor == membership.size()) {
                         handleUserRequest(userRequest);
                         userRequestsLock.writeLock().lock();
@@ -441,6 +439,7 @@ public class ActiveReplica extends Replica {
                     } else {
                         decisionRequest = "GiveUp," + userRequest;
                     }
+                    
                     for (String member : membership) {
                         if (member.equals(name)) {
                             continue;
