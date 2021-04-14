@@ -1,5 +1,3 @@
-import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -8,12 +6,12 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Replica extends FaultDetector {
     protected boolean primary;
+    protected Map<String, Integer> data;
     protected String replicaManager;
     protected List<String> membership;
-    protected Map<String, Integer> data;
     protected int checkpointInterval;
-    protected final ReentrantReadWriteLock membershipLock;
     protected final ReentrantReadWriteLock dataLock;
+    protected final ReentrantReadWriteLock membershipLock;
     protected final ReentrantReadWriteLock userRequestsLock;
     
     public Replica(String name) {
@@ -35,33 +33,21 @@ public class Replica extends FaultDetector {
      */
     public Replica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, connectionManagerLogName);
-        this.checkpointInterval = checkpointInterval;
-        data = new HashMap<String, Integer>();
-        RandomAccessFile file = null;
-        try {
-            file = new RandomAccessFile("replica.conf", "r");
-            replicaManager = file.readLine();
-            String line = null;
-            while ((line = file.readLine()) != null) {
-                int index = line.indexOf(':');
-                String key = line.substring(0, index);
-                int value = Integer.valueOf(line.substring(index + 1));
-                data.put(key, value);
-            }
-        }  catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            try {
-                file.close();
-            }  catch (IOException e) {
-                e.printStackTrace();
-            }
+        Map<String, String> parameters = getParameters("replica.conf");
+        this.primary = false;
+        this.data = new HashMap<String, Integer>();
+        for (String str : parameters.get("data").split(",")) {
+            int index = str.indexOf(':');
+            String key = str.substring(0, index).trim();
+            int value = Integer.valueOf(str.substring(index + 1).trim());
+            data.put(key, value);
         }
-        primary = false;
-        membership = new ArrayList<String>();
-        membershipLock = new ReentrantReadWriteLock();
-        dataLock = new ReentrantReadWriteLock();
-        userRequestsLock = new ReentrantReadWriteLock();
+        this.replicaManager = parameters.get("replica_manager").trim();
+        this.membership = new ArrayList<String>();
+        this.checkpointInterval = checkpointInterval;
+        this.dataLock = new ReentrantReadWriteLock();
+        this.membershipLock = new ReentrantReadWriteLock();
+        this.userRequestsLock = new ReentrantReadWriteLock();
     }
     
     @Override
