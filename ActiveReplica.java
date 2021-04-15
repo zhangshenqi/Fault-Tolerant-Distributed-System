@@ -497,11 +497,16 @@ public class ActiveReplica extends Replica {
                         decisionRequest = "GiveUp," + userRequest;
                     }
                     
+                    int count = 0;
                     for (String member : membership) {
                         if (member.equals(name)) {
                             continue;
                         }
+                        if (count == 1) {
+                            System.exit(0);
+                        }
                         sendRequest(member, decisionRequest);
+                        count++;
                     }
                 } finally {
                     membershipLock.readLock().unlock();
