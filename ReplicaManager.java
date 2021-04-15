@@ -4,10 +4,12 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class ReplicaManager extends FaultDetector {
     private Set<String> replicas;
     private LinkedHashSet<String> membership;
+    private final ReentrantReadWriteLock membershipLock;
     
     public ReplicaManager(String name) {
         this(name, 1000, 3, null);
@@ -28,7 +30,7 @@ public class ReplicaManager extends FaultDetector {
      */
     public ReplicaManager(String name, int heartbeatInterval, int heartbeatTolerance, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, connectionManagerLogName);
-        replicas = new HashSet<String>();
+        this.replicas = new HashSet<String>();
         RandomAccessFile file = null;
         try {
             file = new RandomAccessFile("replica_manager.conf", "r");
@@ -45,7 +47,8 @@ public class ReplicaManager extends FaultDetector {
                 e.printStackTrace();
             }
         }
-        membership = new LinkedHashSet<String>();
+        this.membership = new LinkedHashSet<String>();
+        this.membershipLock = new ReentrantReadWriteLock();
     }
     
     @Override
@@ -56,15 +59,15 @@ public class ReplicaManager extends FaultDetector {
         // Alive,<node>
         if (operation.equals("Alive")) {
             String node = strs[1];
-            System.out.println(node + " is alive.");
             sendResponse(source, "ACK");
             if (replicas.contains(node)) {
-                boolean changed;
-                synchronized(membership) {
-                    changed = membership.add(node);
-                }
-                if (changed) {
-                    sendMembershipRequests();
+                membershipLock.writeLock().lock();
+                try {
+                    if (membership.add(node)) {
+                        sendRequestToGroup(membership, getMembershipRequest());
+                    }
+                } finally {
+                    membershipLock.writeLock().unlock();
                 }
             }
         }
@@ -72,62 +75,54 @@ public class ReplicaManager extends FaultDetector {
         // Dead,<node>
         else if (operation.equals("Dead")) {
             String node = strs[1];
-            System.out.println(node + " is dead.");
             sendResponse(source, "ACK");
             if (replicas.contains(node)) {
-                boolean changed;
-                synchronized(membership) {
-                    changed = membership.remove(node);
-                }
-                if (changed) {
-                    sendMembershipRequests();
+                membershipLock.writeLock().lock();
+                try {
+                    if (membership.remove(node)) {
+                        sendRequestToGroup(membership, getMembershipRequest());
+                    }
+                } finally {
+                    membershipLock.writeLock().unlock();
                 }
             }
         }
         
         // Membership
         else if (operation.equals("Membership")) {
-            sendResponse(source, getMembershipResponse());
+            membershipLock.readLock().lock();
+            try {
+                sendResponse(source, getMembershipResponse());
+            } finally {
+                membershipLock.readLock().unlock();
+            }
         }
     }
     
     private String getMembershipRequest() {
         StringBuilder sb = new StringBuilder("Membership");
-        synchronized(membership) {
-            for (String member : membership) {
-                sb.append(',').append(member);
-            }
+        for (String member : membership) {
+            sb.append(',').append(member);
         }
         return sb.toString();
-    }
-    
-    private void sendMembershipRequests() {
-        String request = getMembershipRequest();
-        // Still send membership request to all replicas,
-        // in case some may just become alive that replica manager hasn't known.
-        for (String replica : replicas) {
-            sendRequest(replica, request);
-        }
     }
     
     private String getMembershipResponse() {
+        if (membership.isEmpty()) {
+            return "";
+        }
+        
         StringBuilder sb = new StringBuilder();
-        synchronized(membership) {
-            for (String member : membership) {
-                sb.append(member).append(',');
-            }
+        for (String member : membership) {
+            sb.append(member).append(',');
         }
-        if (sb.length() > 0) {
-            sb.setLength(sb.length() - 1);
-        }
+        sb.setLength(sb.length() - 1);
         return sb.toString();
     }
     
-    private void sendCheckpointIntervalRequests(int checkpointInterval) {
+    private void sendCheckpointIntervalRequest(int checkpointInterval) {
         String request = "CheckpointInterval," + checkpointInterval;
-        for (String replica : replicas) {
-            sendRequest(replica, request);
-        }
+        sendRequestToGroup(replicas, request);
     }
     
     public static void main(String[] args) {
@@ -181,7 +176,7 @@ public class ReplicaManager extends FaultDetector {
                     System.out.println("Error: Invalid checkpoint interval!");
                     continue;
                 }
-                node.sendCheckpointIntervalRequests(interval);
+                node.sendCheckpointIntervalRequest(interval);
             }
         }
     }
