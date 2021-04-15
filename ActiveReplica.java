@@ -1,9 +1,12 @@
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Scanner;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class ActiveReplica extends Replica {
     private LinkedHashSet<String> userRequests;
+    private Set<String> restoredUserRequests;
     private String checkpoint;
     private StringBuilder logBuilder;
     private boolean restored;
@@ -29,6 +32,7 @@ public class ActiveReplica extends Replica {
     public ActiveReplica(String name, int heartbeatInterval, int heartbeatTolerance, int checkpointInterval, String connectionManagerLogName) {
         super(name, heartbeatInterval, heartbeatTolerance, checkpointInterval, connectionManagerLogName);
         this.userRequests = new LinkedHashSet<String>();
+        this.restoredUserRequests = new HashSet<String>();
         this.checkpoint = getCheckpoint();
         this.logBuilder = new StringBuilder();
         this.restored = false;
@@ -127,7 +131,7 @@ public class ActiveReplica extends Replica {
             String response;
             userRequestsLock.readLock().lock();
             try {
-                if (userRequests.contains(userRequest)) {
+                if (userRequests.contains(userRequest) || restoredUserRequests.contains(userRequest)) {
                     response = "Yes";
                 } else {
                     response = "No";
@@ -140,13 +144,23 @@ public class ActiveReplica extends Replica {
         
         else if (operation.equals("Do")) {
             String userRequest = request.substring(request.indexOf(',') + 1);
-            handleUserRequest(userRequest);
+            userRequestsLock.readLock().lock();
+            try {
+                if (userRequests.contains(userRequest)) {
+                    handleUserRequest(userRequest);
+                } else {
+                    handleRestoredUserRequest(userRequest);
+                }
+            } finally {
+                userRequestsLock.readLock().unlock();
+            }
             userRequestsLock.writeLock().lock();
             try {
                 userRequests.remove(userRequest);
             } finally {
                 userRequestsLock.writeLock().unlock();
             }
+            restoredUserRequests.remove(userRequest);
             sendResponse(source, "ACK");
         }
         
@@ -265,6 +279,49 @@ public class ActiveReplica extends Replica {
         }
     }
     
+    private void handleRestoredUserRequest(String request) {
+        String[] strs = request.split(",");
+        String operation = strs[1];
+        String key = strs[2];
+        
+        if (operation.equals("Get")) {
+            logBuilderLock.writeLock().lock();
+            try {
+                logBuilder.append(request).append(';');
+            } finally {
+                logBuilderLock.writeLock().unlock();
+            }
+        }
+        
+        else if (operation.equals("Increment")) {
+            dataLock.writeLock().lock();
+            logBuilderLock.writeLock().lock();
+            try {
+                if (data.containsKey(key)) {
+                    data.put(key, data.get(key) + 1);
+                }
+                logBuilder.append(request).append(';');
+            } finally {
+                dataLock.writeLock().unlock();
+                logBuilderLock.writeLock().unlock();
+            }
+        }
+        
+        else if (operation.equals("Decrement")) {
+            dataLock.writeLock().lock();
+            logBuilderLock.writeLock().lock();
+            try {
+                if (data.containsKey(key)) {
+                    data.put(key, data.get(key) - 1);
+                }
+                logBuilder.append(request).append(';');
+            } finally {
+                dataLock.writeLock().unlock();
+                logBuilderLock.writeLock().unlock();
+            }
+        }
+    }
+    
     private void reHandleUserRequest(String request) {
         String[] strs = request.split(",");
         String operation = strs[1];
@@ -318,7 +375,9 @@ public class ActiveReplica extends Replica {
             userRequestsLock.writeLock().lock();
             try {
                 for (String request : requests) {
-                    userRequests.add(request);
+                    if (!userRequests.contains(request)) {
+                        restoredUserRequests.add(request);
+                    }
                 }
             } finally {
                 userRequestsLock.writeLock().unlock();
@@ -386,8 +445,6 @@ public class ActiveReplica extends Replica {
                 dataLock.readLock().lock();
                 logBuilderLock.writeLock().lock();
                 try {
-                    System.out.println("checkpoint: " + checkpoint);
-                    System.out.println("log: " + logBuilder.toString());
                     checkpoint = getCheckpoint();
                     logBuilder.setLength(0);
                 } finally {
