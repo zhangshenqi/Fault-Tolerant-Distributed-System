@@ -12,8 +12,11 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -167,6 +170,25 @@ public abstract class ConnectionManager {
         }
         
         return response;
+    }
+    
+    protected Map<String, String> sendRequestToGroup(Collection<String> group, String request) {
+        Map<String, String> responses = new HashMap<String, String>();
+        List<Thread> threads = new ArrayList<Thread>(group.size());
+        for (String destination : group) {
+            threads.add(new Thread(new RequestSender(destination, request, responses)));
+        }
+        for (Thread thread : threads) {
+            thread.start();
+        }
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        return responses;
     }
     
     /**
@@ -342,6 +364,26 @@ public abstract class ConnectionManager {
             this.name  = name;
             this.address = address;
             this.backendPort = backendPort;
+        }
+    }
+    
+    private class RequestSender implements Runnable {
+        private String destination;
+        private String request;
+        private Map<String, String> responses;
+        
+        RequestSender(String destination, String request, Map<String, String> responses) {
+            this.destination = destination;
+            this.request = request;
+            this.responses = responses;
+        }
+        
+        @Override
+        public void run() {
+            String response = sendRequest(destination, request);
+            synchronized(responses) {
+                responses.put(destination, response);
+            }
         }
     }
     
