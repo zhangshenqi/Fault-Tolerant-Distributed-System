@@ -178,6 +178,23 @@ public abstract class ConnectionManager {
         for (String destination : group) {
             threads.add(new Thread(new RequestSender(destination, request, responses)));
         }
+        startAndJoinThreads(threads);
+        return responses;
+    }
+    
+    protected Map<String, String> sendRequestToGroup(Collection<String> group, String exception, String request) {
+        Map<String, String> responses = new HashMap<String, String>();
+        List<Thread> threads = new ArrayList<Thread>(group.size());
+        for (String destination : group) {
+            if (!destination.equals(exception)) {
+                threads.add(new Thread(new RequestSender(destination, request, responses)));
+            }
+        }
+        startAndJoinThreads(threads);
+        return responses;
+    }
+    
+    private void startAndJoinThreads(List<Thread> threads) {
         for (Thread thread : threads) {
             thread.start();
         }
@@ -188,7 +205,6 @@ public abstract class ConnectionManager {
                 e.printStackTrace();
             }
         }
-        return responses;
     }
     
     /**
