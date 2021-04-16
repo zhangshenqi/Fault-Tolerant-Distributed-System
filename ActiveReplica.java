@@ -1,5 +1,8 @@
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -7,6 +10,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class ActiveReplica extends Replica {
     private LinkedHashSet<String> userRequests;
     private Set<String> restoredUserRequests;
+    private String currentUserRequest;
+    private String previousUserRequest;
     private String checkpoint;
     private StringBuilder logBuilder;
     private boolean restored;
@@ -33,6 +38,8 @@ public class ActiveReplica extends Replica {
         super(name, heartbeatInterval, heartbeatTolerance, checkpointInterval, connectionManagerLogName);
         this.userRequests = new LinkedHashSet<String>();
         this.restoredUserRequests = new HashSet<String>();
+        this.currentUserRequest = "";
+        this.previousUserRequest = "";
         this.checkpoint = getCheckpoint();
         this.logBuilder = new StringBuilder();
         this.restored = false;
@@ -105,6 +112,53 @@ public class ActiveReplica extends Replica {
                 
                 if (!primary && membership.get(0).equals(name)) {
                     primary = true;
+                    Map<String, String> responses = sendRequestToGroup(membership, "CurrentUserRequest");
+                    List<String> busyMembers = new ArrayList<String>();
+                    List<String> freeMembers = new ArrayList<String>();
+                    Set<String> currentUserRequests = new HashSet<String>();
+                    for (String member : responses.keySet()) {
+                        String currentUserRequest = responses.get(member);
+                        if (currentUserRequest != null) {
+                            if (currentUserRequest.isEmpty()) {
+                                freeMembers.add(member);
+                            } else {
+                                busyMembers.add(member);
+                                currentUserRequests.add(currentUserRequest);
+                            }
+                        }
+                    }
+                    
+                    if (!currentUserRequests.isEmpty()) {
+                        if (currentUserRequests.size() > 1) {
+                            System.err.println("Error: Replicas have different current user requests!");
+                            System.exit(0);
+                        }
+                        
+                        if (freeMembers.isEmpty()) {
+                            sendRequestToGroup(busyMembers, "Do," + currentUserRequests.iterator().next());
+                        }
+                        
+                        else {
+                            responses = sendRequestToGroup(freeMembers, "PreviousUserRequest");
+                            Set<String> previousUserRequests = new HashSet<String>();
+                            for (String previousUserRequest : responses.values()) {
+                                if (previousUserRequest != null && !previousUserRequest.isEmpty()) {
+                                    previousUserRequests.add(previousUserRequest);
+                                }
+                            }
+                            
+                            if (!previousUserRequests.isEmpty()) {
+                                if (previousUserRequests.size() > 1) {
+                                    System.err.println("Error: Replicas have different previous user requests!");
+                                    System.exit(0);
+                                }
+                                
+                                if (previousUserRequests.iterator().next().equals(currentUserRequests.iterator().next())) {
+                                    sendRequestToGroup(busyMembers, "Do," + currentUserRequests.iterator().next());
+                                }
+                            }
+                        }
+                    }
                     new Thread(new VoteInitiator()).start();
                 }
             } finally {
@@ -133,6 +187,7 @@ public class ActiveReplica extends Replica {
             try {
                 if (userRequests.contains(userRequest) || restoredUserRequests.contains(userRequest)) {
                     response = "Yes";
+                    currentUserRequest = userRequest;
                 } else {
                     response = "No";
                 }
@@ -161,6 +216,8 @@ public class ActiveReplica extends Replica {
                 userRequestsLock.writeLock().unlock();
             }
             restoredUserRequests.remove(userRequest);
+            previousUserRequest = currentUserRequest;
+            currentUserRequest = "";
             sendResponse(source, "ACK");
         }
         
@@ -213,6 +270,14 @@ public class ActiveReplica extends Replica {
             
             String response = sb.toString();
             sendResponse(source, response);
+        }
+        
+        else if (operation.equals("CurrentUserRequest")) {
+            sendResponse(source, currentUserRequest);
+        }
+        
+        else if (operation.equals("PreviousUserRequest")) {
+            sendResponse(source, previousUserRequest);
         }
     }
     
@@ -497,16 +562,11 @@ public class ActiveReplica extends Replica {
                         decisionRequest = "GiveUp," + userRequest;
                     }
                     
-                    int count = 0;
                     for (String member : membership) {
                         if (member.equals(name)) {
                             continue;
                         }
-                        if (count == 1) {
-                            System.exit(0);
-                        }
                         sendRequest(member, decisionRequest);
-                        count++;
                     }
                 } finally {
                     membershipLock.readLock().unlock();
