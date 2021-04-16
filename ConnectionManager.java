@@ -11,6 +11,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -70,24 +71,28 @@ public abstract class ConnectionManager {
      * @param logName the name of the log file; if null, log will be written in stdout
      */
     public ConnectionManager(String name, boolean launchTCPServer, boolean launchUDPServer, String logName) {
+        Map<String, String> parameters = getParameters("connection_manager.conf");
         this.name = name;
-        peers = new HashMap<String, Peer>();
-        RandomAccessFile file = null;
+        this.peers = new HashMap<String, Peer>(parameters.size());
+        for (String peerName : parameters.keySet()) {
+            String str = parameters.get(peerName);
+            int index = str.indexOf(':');
+            String peerAddress = str.substring(0, index).trim();
+            int peerBackendPort = Integer.valueOf(str.substring(index + 1).trim());
+            Peer peer = new Peer(peerName, peerAddress, peerBackendPort);
+            this.peers.put(peerName, peer);
+        }
         try {
-            file = new RandomAccessFile("connection_manager.conf", "r");
-            String line = null;
-            while ((line = file.readLine()) != null) {
-                String[] strs = line.split(":");
-                Peer peer = new Peer(strs[0], strs[1], Integer.valueOf(strs[2]));
-                peers.put(strs[0], peer);
-            }
-            datagramSocket = new DatagramSocket(peers.get(name).backendPort);
-        }  catch (IOException e) {
+            this.datagramSocket = new DatagramSocket(peers.get(name).backendPort);
+        } catch (SocketException e) {
             e.printStackTrace();
-        } finally {
+        }
+        if (logName == null) {
+            this.logWriter = System.out;
+        } else {
             try {
-                file.close();
-            }  catch (IOException e) {
+                this.logWriter = new PrintStream(new FileOutputStream(logName));
+            } catch (FileNotFoundException e) {
                 e.printStackTrace();
             }
         }
@@ -98,16 +103,6 @@ public abstract class ConnectionManager {
         
         if (launchUDPServer) {
             new Thread(new UDPServer()).start();
-        }
-        
-        if (logName == null) {
-            logWriter = System.out;
-        } else {
-            try {
-                logWriter = new PrintStream(new FileOutputStream(logName));
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
-            }
         }
     }
     
@@ -125,7 +120,7 @@ public abstract class ConnectionManager {
             return null;
         }
         
-        request = (new StringBuilder(name)).append(',').append(request).toString();
+        request = new StringBuilder(name).append(',').append(request).toString();
         Peer peer = peers.get(destination);
         return sendRequest(peer, request, peer.clientSocket == null);
     }
@@ -172,6 +167,12 @@ public abstract class ConnectionManager {
         return response;
     }
     
+    /**
+     * Sends request to a group of destinations in the distributed system concurrently.
+     * @param group group of destinations
+     * @param request request
+     * @return a map with destinations as keys and responses as values.
+     */
     protected Map<String, String> sendRequestToGroup(Collection<String> group, String request) {
         Map<String, String> responses = new HashMap<String, String>();
         List<Thread> threads = new ArrayList<Thread>(group.size());
@@ -182,6 +183,13 @@ public abstract class ConnectionManager {
         return responses;
     }
     
+    /**
+     * Sends request to a group of destinations in the distributed system concurrently.
+     * @param group group of destinations
+     * @param exception destination excepted
+     * @param request request
+     * @return a map with destinations as keys and responses as values
+     */
     protected Map<String, String> sendRequestToGroup(Collection<String> group, String exception, String request) {
         Map<String, String> responses = new HashMap<String, String>();
         List<Thread> threads = new ArrayList<Thread>(group.size());
@@ -194,6 +202,10 @@ public abstract class ConnectionManager {
         return responses;
     }
     
+    /**
+     * Starts and joins threads.
+     * @param threads threads
+     */
     private void startAndJoinThreads(List<Thread> threads) {
         for (Thread thread : threads) {
             thread.start();
@@ -224,6 +236,7 @@ public abstract class ConnectionManager {
         
         if (!peers.containsKey(source)) {
             printLog("Error: No such source!");
+            return;
         }
         
         Peer peer = peers.get(source);
@@ -248,7 +261,7 @@ public abstract class ConnectionManager {
             return;
         }
         
-        message = (new StringBuilder(name)).append(',').append(message).toString();
+        message = new StringBuilder(name).append(',').append(message).toString();
         Peer peer = peers.get(destination);
         byte[] buf = message.getBytes();
         try {
@@ -267,7 +280,7 @@ public abstract class ConnectionManager {
     protected abstract void handleMessage(String source, String message);
     
     /**
-     * Get the parameters from the specified configuration file.
+     * Gets the parameters from the specified configuration file.
      * @param fileName the name of the specified configuration file
      * @return parameters
      */
@@ -383,17 +396,39 @@ public abstract class ConnectionManager {
         }
     }
     
+    /**
+     * Request sender.
+     *
+     */
     private class RequestSender implements Runnable {
+        /**
+         * Destination.
+         */
         private String destination;
+        /**
+         * Request.
+         */
         private String request;
+        /**
+         * A map with destinations as keys and responses as values.
+         */
         private Map<String, String> responses;
         
+        /**
+         * Constructs a request sender.
+         * @param destination destination
+         * @param request request
+         * @param responses a map with destinations as keys and responses as values
+         */
         RequestSender(String destination, String request, Map<String, String> responses) {
             this.destination = destination;
             this.request = request;
             this.responses = responses;
         }
         
+        /**
+         * Sends a request and stores the response in the map.
+         */
         @Override
         public void run() {
             String response = sendRequest(destination, request);
@@ -422,7 +457,7 @@ public abstract class ConnectionManager {
         }
         
         /**
-         * Keep listening. When a socket is accpeted, a TCP client handler socket is launched.
+         * Keeps listening. When a socket is accepted, a TCP client handler socket is launched.
          */
         @Override
         public void run() {
@@ -439,7 +474,6 @@ public abstract class ConnectionManager {
                     serverSocket.close();
                 } catch (IOException e) {}
             }
-            
         }
     }
     

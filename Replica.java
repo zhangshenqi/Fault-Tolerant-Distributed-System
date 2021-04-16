@@ -35,7 +35,7 @@ public class Replica extends FaultDetector {
             int index = str.indexOf(':');
             String key = str.substring(0, index).trim();
             int value = Integer.valueOf(str.substring(index + 1).trim());
-            data.put(key, value);
+            this.data.put(key, value);
         }
         this.replicaManager = parameters.get("replica_manager").trim();
         this.membership = new ArrayList<String>();
