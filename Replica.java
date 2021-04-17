@@ -177,8 +177,7 @@ public class Replica extends FaultDetector {
     /**
      * Prints the parameters.
      */
-    @Override
-    protected void printParameters() {
+    private void printParameters() {
         StringBuilder sb = new StringBuilder();
         sb.append("data = ");
         if (!this.data.isEmpty()) {

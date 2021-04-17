@@ -313,7 +313,7 @@ public abstract class ConnectionManager {
     /**
      * Prints the parameters.
      */
-    protected void printParameters() {
+    private void printParameters() {
         StringBuilder sb = new StringBuilder();
         sb.append("name = ").append(this.name).append('\n');
         sb.append("peers = ");

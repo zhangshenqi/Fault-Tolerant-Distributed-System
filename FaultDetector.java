@@ -87,12 +87,12 @@ public class FaultDetector extends ConnectionManager {
         int index = str.indexOf('|');
         this.parents = new ArrayList<String>();
         if (index > 0) {
-            this.parents.addAll(Arrays.asList(str.substring(0, index).split("\\s+,\\s+")));
+            this.parents.addAll(Arrays.asList(str.substring(0, index).trim().split("\\s*,\\s*")));
         }
         this.childrenTolerance = new HashMap<String, AtomicInteger>();
         if (index < str.length() - 1) {
-            for (String child : str.substring(index + 1).split("\\s+,\\s+")) {
-                childrenTolerance.put(child, new AtomicInteger(0));
+            for (String child : str.substring(index + 1).split(",")) {
+                this.childrenTolerance.put(child.trim(), new AtomicInteger(0));
             }
         }
         
@@ -209,8 +209,7 @@ public class FaultDetector extends ConnectionManager {
     /**
      * Prints the parameters.
      */
-    @Override
-    protected void printParameters() {
+    private void printParameters() {
         StringBuilder sb = new StringBuilder();
         sb.append("parents = ");
         if (!this.parents.isEmpty()) {

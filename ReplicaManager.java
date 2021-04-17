@@ -63,7 +63,7 @@ public class ReplicaManager extends FaultDetector {
         super(name, heartbeatInterval, heartbeatTolerance, logName);
         Map<String, String> parameters = getParameters("replica_manager.conf");
         this.replicas = new HashSet<String>();
-        this.replicas.addAll(Arrays.asList(parameters.get("replicas").split("\\s+,\\s+")));
+        this.replicas.addAll(Arrays.asList(parameters.get("replicas").split("\\s*,\\s*")));
         this.membership = new LinkedHashSet<String>();
         this.membershipLock = new ReentrantReadWriteLock();
         
@@ -185,8 +185,7 @@ public class ReplicaManager extends FaultDetector {
     /**
      * Prints the parameters.
      */
-    @Override
-    protected void printParameters() {
+    private void printParameters() {
         StringBuilder sb = new StringBuilder();
         sb.append("replicas = ");
         if (!this.replicas.isEmpty()) {
