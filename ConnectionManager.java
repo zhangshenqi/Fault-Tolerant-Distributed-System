@@ -314,7 +314,7 @@ public abstract class ConnectionManager {
      * @param host host
      * @param text text
      */
-    private synchronized void printLog(OPERATION operation, String host, String text) {
+    protected synchronized void printLog(OPERATION operation, String host, String text) {
         StringBuilder sb = new StringBuilder(new SimpleDateFormat("HH:mm:ss.SSS").format(new Date()));
         sb.append(' ').append(name);
         switch (operation) {
@@ -345,7 +345,7 @@ public abstract class ConnectionManager {
      * Prints the log.
      * @param text
      */
-    private synchronized void printLog(String text) {
+    protected synchronized void printLog(String text) {
         logWriter.println(text);
     }
     

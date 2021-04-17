@@ -125,6 +125,10 @@ public class ReplicaManager extends FaultDetector {
         sendRequestToGroup(replicas, request);
     }
     
+    /**
+     * A shell to test the replica manager.
+     * @param args arguments
+     */
     public static void main(String[] args) {
         ReplicaManager node = new ReplicaManager(args[0], args.length >= 2 ? args[1] : null);
         
@@ -157,7 +161,7 @@ public class ReplicaManager extends FaultDetector {
                     continue;
                 }
                 node.setHeartbeatInterval(interval);
-                node.sendRequestsToChildren("HeartbeatInterval," + interval);
+                node.sendRequestToChildren("HeartbeatInterval," + interval);
             } else if (operation.equals("2")) {
                 System.out.println("Please input heartbeat tolerance:");
                 String toleranceStr = scanner.next();
@@ -167,7 +171,7 @@ public class ReplicaManager extends FaultDetector {
                     continue;
                 }
                 node.setHeartbeatTolerance(tolerance);
-                node.sendRequestsToChildren("HeartbeatTolerance," + tolerance);
+                node.sendRequestToChildren("HeartbeatTolerance," + tolerance);
             } else {
                 System.out.println("Please input checkpoint interval:");
                 String intervalStr = scanner.next();

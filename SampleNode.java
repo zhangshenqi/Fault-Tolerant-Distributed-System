@@ -35,7 +35,7 @@ public class SampleNode extends ConnectionManager {
     protected void handleMessage(String source, String message) {}
     
     /**
-     * A shell which allow users to test the connection manager.
+     * A shell to test the connection manager.
      * @param args arguments
      */
     public static void main(String[] args) {
