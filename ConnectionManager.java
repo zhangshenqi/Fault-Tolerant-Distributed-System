@@ -97,6 +97,8 @@ public abstract class ConnectionManager {
             }
         }
         
+        printParameters();
+        
         if (launchTCPServer) {
             new Thread(new TCPServer(peers.get(name).backendPort)).start();
         }
@@ -309,6 +311,22 @@ public abstract class ConnectionManager {
     }
     
     /**
+     * Prints the parameters.
+     */
+    protected void printParameters() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("name = ").append(this.name).append('\n');
+        sb.append("peers = ");
+        if (!this.peers.isEmpty()) {
+            for (String peer : this.peers.keySet()) {
+                sb.append(peer).append(", ");
+            }
+            sb.setLength(sb.length() - 2);
+        }
+        printLog(sb.toString());
+    }
+    
+    /**
      * Prints the log.
      * @param operation operation
      * @param host host
@@ -461,6 +479,7 @@ public abstract class ConnectionManager {
          */
         @Override
         public void run() {
+            printLog("Launch TCP server.");
             ServerSocket serverSocket = null;
             try {
                 serverSocket = new ServerSocket(backendPort);
@@ -539,6 +558,7 @@ public abstract class ConnectionManager {
          */
         @Override
         public void run() {
+            printLog("Launch UDP server.");
             try {
                 byte[] buf = new byte[BUF_SIZE];
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);

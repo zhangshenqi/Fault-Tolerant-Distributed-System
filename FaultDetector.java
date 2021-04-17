@@ -1,4 +1,5 @@
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -86,9 +87,7 @@ public class FaultDetector extends ConnectionManager {
         int index = str.indexOf('|');
         this.parents = new ArrayList<String>();
         if (index > 0) {
-            for (String parent : str.substring(0, index).split("\\s+,\\s+")) {
-                this.parents.add(parent);
-            }
+            this.parents.addAll(Arrays.asList(str.substring(0, index).split("\\s+,\\s+")));
         }
         this.childrenTolerance = new HashMap<String, AtomicInteger>();
         if (index < str.length() - 1) {
@@ -96,6 +95,8 @@ public class FaultDetector extends ConnectionManager {
                 childrenTolerance.put(child, new AtomicInteger(0));
             }
         }
+        
+        printParameters();
         
         if (parents.size() > 0) {
             new Thread(new HeartbeatSender()).start();
@@ -184,23 +185,52 @@ public class FaultDetector extends ConnectionManager {
     }
     
     /**
-     * Sets heartbeat interval
+     * Sets heartbeat interval.
      * @param heartbeatInterval heartbeat interval
      */
     protected void setHeartbeatInterval(int heartbeatInterval) {
         if (heartbeatInterval > 0) {
             this.heartbeatInterval = heartbeatInterval;
         }
+        printLog("heartbeat interval = " + this.heartbeatInterval);
     }
     
     /**
-     * Sets heartbeat tolerance
+     * Sets heartbeat tolerance.
      * @param heartbeatTolerance heartbeat tolerance
      */
     protected void setHeartbeatTolerance(int heartbeatTolerance) {
         if (heartbeatTolerance > 0) {
             this.heartbeatTolerance = heartbeatTolerance;
         }
+        printLog("heartbeat tolerance = " + this.heartbeatTolerance);
+    }
+    
+    /**
+     * Prints the parameters.
+     */
+    @Override
+    protected void printParameters() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("parents = ");
+        if (!this.parents.isEmpty()) {
+            for (String parent : this.parents) {
+                sb.append(parent).append(", ");
+            }
+            sb.setLength(sb.length() - 2);
+        }
+        sb.append('\n');
+        sb.append("children = ");
+        if (!this.childrenTolerance.isEmpty()) {
+            for (String child : this.childrenTolerance.keySet()) {
+                sb.append(child).append(", ");
+            }
+            sb.setLength(sb.length() - 2);
+        }
+        sb.append('\n');
+        sb.append("heartbeat interval = ").append(this.heartbeatInterval).append('\n');
+        sb.append("heartbeat tolerance = ").append(this.heartbeatTolerance);
+        printLog(sb.toString());
     }
     
     /**
@@ -213,6 +243,7 @@ public class FaultDetector extends ConnectionManager {
          */
         @Override
         public void run() {
+            printLog("Launch heartbeat sender.");
             while (true) {
                 for (String parent : parents) {
                     sendMessage(parent, "Heartbeat");
@@ -236,6 +267,7 @@ public class FaultDetector extends ConnectionManager {
          */
         @Override
         public void run() {
+            printLog("Launch tolerance decrementer.");
             while (true) {
                 try {
                     Thread.sleep(heartbeatInterval);

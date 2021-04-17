@@ -1,56 +1,80 @@
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/**
+ * A replica manager which controls the distributed system.
+ * @author Shenqi Zhang
+ *
+ */
 public class ReplicaManager extends FaultDetector {
+    /**
+     * Replicas.
+     */
     private Set<String> replicas;
+    /**
+     * Alive replicas.
+     */
     private LinkedHashSet<String> membership;
+    /**
+     * Lock for membership.
+     */
     private final ReentrantReadWriteLock membershipLock;
     
+    /**
+     * Constructs a replica manager.
+     * @param name the name of this node in the distributed system
+     */
     public ReplicaManager(String name) {
-        this(name, 1000, 3, null);
+        this(name, DEFAULT_HEARTBEAT_INTERVAL, DEFAULT_HEARTBEAT_TOLERANCE, null);
     }
     
-    public ReplicaManager(String name, String connectionManagerLogName) {
-        this(name, 1000, 3, connectionManagerLogName);
+    /**
+     * Constructs a replica manager.
+     * @param name the name of this node in the distributed system
+     * @param logName the name of the log file; if null, log will be written in stdout
+     */
+    public ReplicaManager(String name, String logName) {
+        this(name, DEFAULT_HEARTBEAT_INTERVAL, DEFAULT_HEARTBEAT_TOLERANCE, logName);
     }
     
+    /**
+     * Constructs a replica manager.
+     * @param name the name of this node in the distributed system
+     * @param heartbeatInterval heartbeat interval
+     * @param heartbeatTolerance heartbeat tolerance
+     */
     public ReplicaManager(String name, int heartbeatInterval, int heartbeatTolerance) {
         this(name, heartbeatInterval, heartbeatTolerance, null);
     }
     
     /**
-     * Constructs a fault detector with specified name and connection manager log name.
-     * @param name name of this sample node.
-     * @param logName name of the connection manager log file
+     * Constructs a replica manager.
+     * @param name the name of this node in the distributed system
+     * @param heartbeatInterval heartbeat interval
+     * @param heartbeatTolerance heartbeat tolerance
+     * @param logName the name of the log file; if null, log will be written in stdout
      */
-    public ReplicaManager(String name, int heartbeatInterval, int heartbeatTolerance, String connectionManagerLogName) {
-        super(name, heartbeatInterval, heartbeatTolerance, connectionManagerLogName);
+    public ReplicaManager(String name, int heartbeatInterval, int heartbeatTolerance, String logName) {
+        super(name, heartbeatInterval, heartbeatTolerance, logName);
+        Map<String, String> parameters = getParameters("replica_manager.conf");
         this.replicas = new HashSet<String>();
-        RandomAccessFile file = null;
-        try {
-            file = new RandomAccessFile("replica_manager.conf", "r");
-            String line = file.readLine();
-            for (String replica : line.split(",")) {
-                replicas.add(replica);
-            }
-        }  catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            try {
-                file.close();
-            }  catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+        this.replicas.addAll(Arrays.asList(parameters.get("replicas").split("\\s+,\\s+")));
         this.membership = new LinkedHashSet<String>();
         this.membershipLock = new ReentrantReadWriteLock();
+        
+        printParameters();
     }
     
+    /**
+     * Handles the request from the source.
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
     @Override
     protected void handleRequest(String source, String request) {
         String[] strs = request.split(",");
@@ -59,6 +83,7 @@ public class ReplicaManager extends FaultDetector {
         // Alive,<node>
         if (operation.equals("Alive")) {
             String node = strs[1];
+            printLog(node + " is alive.");
             sendResponse(source, "ACK");
             if (replicas.contains(node)) {
                 membershipLock.writeLock().lock();
@@ -75,6 +100,7 @@ public class ReplicaManager extends FaultDetector {
         // Dead,<node>
         else if (operation.equals("Dead")) {
             String node = strs[1];
+            printLog(node + " is dead.");
             sendResponse(source, "ACK");
             if (replicas.contains(node)) {
                 membershipLock.writeLock().lock();
@@ -99,6 +125,10 @@ public class ReplicaManager extends FaultDetector {
         }
     }
     
+    /**
+     * Gets membership request.
+     * @return membership request
+     */
     private String getMembershipRequest() {
         StringBuilder sb = new StringBuilder("Membership");
         for (String member : membership) {
@@ -107,6 +137,10 @@ public class ReplicaManager extends FaultDetector {
         return sb.toString();
     }
     
+    /**
+     * Gets membership response
+     * @return membership response
+     */
     private String getMembershipResponse() {
         if (membership.isEmpty()) {
             return "";
@@ -120,9 +154,48 @@ public class ReplicaManager extends FaultDetector {
         return sb.toString();
     }
     
-    private void sendCheckpointIntervalRequest(int checkpointInterval) {
-        String request = "CheckpointInterval," + checkpointInterval;
-        sendRequestToGroup(replicas, request);
+    /**
+     * Sets heartbeat interval of this distributed system.
+     * @param heartbeatInterval heartbeat interval
+     */
+    @Override
+    protected void setHeartbeatInterval(int heartbeatInterval) {
+        super.setHeartbeatInterval(heartbeatInterval);
+        sendRequestToChildren("HeartbeatInterval," + heartbeatInterval);
+    }
+    
+    /**
+     * Sets heartbeat tolerance of this distributed system.
+     * @param heartbeatTolerance heartbeat tolerance
+     */
+    @Override
+    protected void setHeartbeatTolerance(int heartbeatTolerance) {
+        super.setHeartbeatTolerance(heartbeatTolerance);
+        sendRequestToChildren("HeartbeatTolerance," + heartbeatTolerance);
+    }
+    
+    /**
+     * Sets checkpoint interval of this distributed system.
+     * @param checkpointInterval checkpoint interval
+     */
+    private void setCheckpointInterval(int checkpointInterval) {
+        sendRequestToGroup(replicas, "CheckpointInterval," + checkpointInterval);
+    }
+    
+    /**
+     * Prints the parameters.
+     */
+    @Override
+    protected void printParameters() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("replicas = ");
+        if (!this.replicas.isEmpty()) {
+            for (String replica : this.replicas) {
+                sb.append(replica).append(", ");
+            }
+            sb.setLength(sb.length() - 2);
+        }
+        printLog(sb.toString());
     }
     
     /**
@@ -147,40 +220,18 @@ public class ReplicaManager extends FaultDetector {
                 System.exit(0);
             }
             
-            if (!operation.matches("[1-3]")) {
-                System.out.println("Error: Invalid operation!");
-                continue;
-            }
-            
             if (operation.equals("1")) {
                 System.out.println("Please input heartbeat interval:");
-                String intervalStr = scanner.next();
-                int interval = Integer.valueOf(intervalStr);
-                if (interval <= 0) {
-                    System.out.println("Error: Invalid heartbeat interval!");
-                    continue;
-                }
-                node.setHeartbeatInterval(interval);
-                node.sendRequestToChildren("HeartbeatInterval," + interval);
+                node.setHeartbeatInterval(Integer.valueOf(scanner.next()));
             } else if (operation.equals("2")) {
                 System.out.println("Please input heartbeat tolerance:");
-                String toleranceStr = scanner.next();
-                int tolerance = Integer.valueOf(toleranceStr);
-                if (tolerance <= 0) {
-                    System.out.println("Error: Invalid heartbeat tolerance!");
-                    continue;
-                }
-                node.setHeartbeatTolerance(tolerance);
-                node.sendRequestToChildren("HeartbeatTolerance," + tolerance);
-            } else {
+                node.setHeartbeatTolerance(Integer.valueOf(scanner.next()));
+            } else if (operation.equals("3")) {
                 System.out.println("Please input checkpoint interval:");
-                String intervalStr = scanner.next();
-                int interval = Integer.valueOf(intervalStr);
-                if (interval <= 0) {
-                    System.out.println("Error: Invalid checkpoint interval!");
-                    continue;
-                }
-                node.sendCheckpointIntervalRequest(interval);
+                node.setCheckpointInterval(Integer.valueOf(scanner.next()));
+            } else {
+                System.out.println("Error: Invalid operation!");
+                continue;
             }
         }
     }
