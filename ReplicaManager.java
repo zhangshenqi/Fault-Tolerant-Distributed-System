@@ -160,8 +160,15 @@ public class ReplicaManager extends FaultDetector {
      */
     @Override
     protected void setHeartbeatInterval(int heartbeatInterval) {
-        super.setHeartbeatInterval(heartbeatInterval);
-        sendRequestToChildren("HeartbeatInterval," + heartbeatInterval);
+        // If heartbeat interval decreases, set children's interval first.
+        // If heartbeat interval increases, set the interval of this node first.
+        if (heartbeatInterval < this.heartbeatInterval) {
+            sendRequestToChildren("HeartbeatInterval," + heartbeatInterval);
+            super.setHeartbeatInterval(heartbeatInterval);
+        } else {
+            super.setHeartbeatInterval(heartbeatInterval);
+            sendRequestToChildren("HeartbeatInterval," + heartbeatInterval);
+        }
     }
     
     /**

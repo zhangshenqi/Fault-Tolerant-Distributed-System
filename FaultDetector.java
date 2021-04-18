@@ -30,7 +30,7 @@ public class FaultDetector extends ConnectionManager {
     /**
      * Heartbeat interval.
      */
-    private int heartbeatInterval;
+    protected int heartbeatInterval;
     /**
      * Heartbeat tolerance. When the number of consecutive missing heartbeats reaches the tolerance, a child is considered dead.
      */
@@ -133,9 +133,17 @@ public class FaultDetector extends ConnectionManager {
         
         // HeartbeatInterval,<interval>
         else if (operation.equals("HeartbeatInterval")) {
-            setHeartbeatInterval(Integer.valueOf(strs[1]));
+            // If heartbeat interval decreases, set children's interval first.
+            // If heartbeat interval increases, set the interval of this node first.
+            int interval = Integer.valueOf(strs[1]);
+            if (interval < heartbeatInterval) {
+                sendRequestToChildren(request);
+                setHeartbeatInterval(interval);
+            } else {
+                setHeartbeatInterval(interval);
+                sendRequestToChildren(request);
+            }
             sendResponse(source, "ACK");
-            sendRequestToChildren(request);
         }
         
         // HeartbeatTolerance,<tolerance>

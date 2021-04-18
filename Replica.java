@@ -179,6 +179,16 @@ public class Replica extends FaultDetector {
      */
     private void printParameters() {
         StringBuilder sb = new StringBuilder();
+        sb.append("replica manager = ").append(this.replicaManager).append('\n');
+        sb.append("checkpoint interval = ").append(this.checkpointInterval);
+        printLog(sb.toString());
+    }
+    
+    /**
+     * Prints the data.
+     */
+    protected void printData() {
+        StringBuilder sb = new StringBuilder();
         sb.append("data = ");
         if (!this.data.isEmpty()) {
             for (String key : data.keySet()) {
@@ -187,16 +197,13 @@ public class Replica extends FaultDetector {
             }
             sb.setLength(sb.length() - 2);
         }
-        sb.append('\n');
-        sb.append("replica manager = ").append(this.replicaManager).append('\n');
-        sb.append("checkpoint interval = ").append(this.checkpointInterval);
         printLog(sb.toString());
     }
     
     /**
      * Prints the membership.
      */
-    private void printMembership() {
+    protected void printMembership() {
         StringBuilder sb = new StringBuilder("Membership = ");
         if (!this.membership.isEmpty()) {
             for (String member : this.membership) {
