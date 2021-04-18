@@ -674,11 +674,9 @@ public class ActiveReplica extends Replica {
                 membershipLock.readLock().lock();
                 try {
                     int numFavor = 1;
-                    for (String member : membership) {
-                        if (member.equals(name)) {
-                            continue;
-                        }
-                        String response = sendRequest(member, "Vote," + userRequest);
+                    Map<String, String> responses = sendRequestToGroup(membership, name, "Vote," + userRequest);
+                    for (String member : responses.keySet()) {
+                        String response = responses.get(member);
                         if (response != null && response.equals("Yes")) {
                             numFavor++;
                         }
@@ -697,12 +695,7 @@ public class ActiveReplica extends Replica {
                         decisionRequest = "GiveUp," + userRequest;
                     }
                     
-                    for (String member : membership) {
-                        if (member.equals(name)) {
-                            continue;
-                        }
-                        sendRequest(member, decisionRequest);
-                    }
+                    sendRequestToGroup(membership, name, decisionRequest);
                 } finally {
                     membershipLock.readLock().unlock();
                 }
