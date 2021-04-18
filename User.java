@@ -1,49 +1,78 @@
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.util.Map;
 import java.util.Random;
 import java.util.Scanner;
 
+/**
+ * A basic user which sends requests to replicas.
+ * @author Shenqi Zhang
+ *
+ */
 public abstract class User extends ConnectionManager {
+    /**
+     * Replica manager.
+     */
     protected String replicaManager;
     
+    /**
+     * Constructs a user.
+     * @param name the name of this node in the distributed system
+     */
     public User(String name) {
         this(name, null);
     }
     
-    public User(String name, String connectionManagerLogName) {
-        super(name, false, false, connectionManagerLogName);
-        RandomAccessFile file = null;
-        try {
-            file = new RandomAccessFile("user.conf", "r");
-            replicaManager = file.readLine();
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            try {
-                file.close();
-            }  catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+    /**
+     * Constructs a user.
+     * @param name the name of this node in the distributed system
+     * @param logName the name of the log file; if null, log will be written in stdout
+     */
+    public User(String name, String logName) {
+        super(name, false, false, logName);
+        Map<String, String> parameters = getParameters("user.conf");
+        this.replicaManager = parameters.get("replica_manager");
+        
+        printParameters();
     }
-
+    
+    /**
+     * Handles the request from the source.
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
     @Override
     protected void handleRequest(String source, String request) {}
-
+    
+    /**
+     * Handles the message from the source.
+     * @param source the source in the distributed system
+     * @param message message
+     */
     @Override
     protected void handleMessage(String source, String message) {}
     
+    /**
+     * Sends request to replicas.
+     * @param request request
+     * @return response
+     */
     protected abstract String sendRequestToReplicas(String request);
     
+    /**
+     * Tests the specified user node.
+     * @param node the specified user node
+     */
     protected static void test(User node) {
-        String testMode = System.getenv("USER_TEST_MODE");
-        if (testMode != null && testMode.equals("AUTO")) {
-            autoTest(node);
-        } else {
+        if (System.getenv("ENABLE_AUTO_TEST") == null) {
             manualTest(node);
+        } else {
+            autoTest(node);
         }
     }
-
+    
+    /**
+     * Tests the specified user node manually.
+     * @param node the specified user node
+     */
     protected static void manualTest(User node) {
         Scanner scanner = new Scanner(System.in);
         while (true) {
@@ -87,6 +116,10 @@ public abstract class User extends ConnectionManager {
         }
     }
     
+    /**
+     * Tests the specified user node automatically.
+     * @param node the specified user node
+     */
     protected static void autoTest(User node) {
         Random random = new Random();
         while (true) {
@@ -111,5 +144,12 @@ public abstract class User extends ConnectionManager {
             String response = node.sendRequestToReplicas(request);
             System.out.println(response);
         }
+    }
+    
+    /**
+     * Prints the parameters.
+     */
+    private void printParameters() {
+        printLog("replica_manager = " + this.replicaManager);
     }
 }

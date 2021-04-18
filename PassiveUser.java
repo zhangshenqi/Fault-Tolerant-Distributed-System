@@ -1,32 +1,54 @@
+import java.util.Arrays;
 
+/**
+ * A user which sends requests to replicas performing passive replication.
+ * @author Shenqi Zhang
+ *
+ */
 public class PassiveUser extends User {
+    /**
+     * Constructs a passive user.
+     * @param name the name of this node in the distributed system
+     */
     public PassiveUser(String name) {
         this(name, null);
     }
     
-    public PassiveUser(String name, String connectionManagerLogName) {
-        super(name, connectionManagerLogName);
+    /**
+     * Constructs a passive user.
+     * @param name the name of this node in the distributed system
+     * @param logName the name of the log file; if null, log will be written in stdout
+     */
+    public PassiveUser(String name, String logName) {
+        super(name, logName);
     }
-
+    
+    /**
+     * Sends request to replicas.
+     * @param request request
+     * @return response
+     */
     @Override
     protected String sendRequestToReplicas(String request) {
         String membership = sendRequest(replicaManager, "Membership");
         if (membership.length() == 0) {
-            return "Error: Server is not available!";
+            return "Error: No server is available!";
         }
         
         String[] members = membership.split(",");
         String response = sendRequest(members[0], request);
         if (response == null) {
-            response = "Error: Server is not available!";
+            response = "Error: No server is available!";
         } else {
-            for (int i = 1; i < members.length; i++) {
-                sendRequest(members[i], request);
-            }
+            sendRequestToGroup(Arrays.asList(members), members[0], request);
         }
         return response;
     }
-
+    
+    /**
+     * Launches a passive user and tests it.
+     * @param args arguments
+     */
     public static void main(String[] args) {
         PassiveUser node = new PassiveUser(args[0], args.length >= 2 ? args[1] : null);
         test(node);
