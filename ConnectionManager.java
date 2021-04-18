@@ -52,6 +52,10 @@ public abstract class ConnectionManager {
      * The log writer.
      */
     private PrintStream logWriter;
+    /**
+     * Whether to write log for messages.
+     */
+    private boolean enableMessageLog;
     
     /**
      * Constructs a connection manager.
@@ -96,6 +100,7 @@ public abstract class ConnectionManager {
                 e.printStackTrace();
             }
         }
+        this.enableMessageLog = System.getenv("DISABLE_MESSAGE_LOG") == null;
         
         printParameters();
         
@@ -256,10 +261,14 @@ public abstract class ConnectionManager {
      * @param message message
      */
     protected void sendMessage(String destination, String message) {
-        printLog(OPERATION.SEND_MESSAGE, destination, message);
+        if (enableMessageLog) {
+            printLog(OPERATION.SEND_MESSAGE, destination, message);
+        }
         
         if (!peers.containsKey(destination)) {
-            printLog("Error: No such destination!");
+            if (enableMessageLog) {
+                printLog("Error: No such destination!");
+            }
             return;
         }
         
@@ -569,7 +578,9 @@ public abstract class ConnectionManager {
                     int index = message.indexOf(',');
                     String source = message.substring(0, index);
                     message = message.substring(index + 1);
-                    printLog(OPERATION.RECEIVE_MESSAGE, source, message);
+                    if (enableMessageLog) {
+                        printLog(OPERATION.RECEIVE_MESSAGE, source, message);
+                    }
                     handleMessage(source, message);
                 }
             } catch (IOException e) {
