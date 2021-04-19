@@ -213,7 +213,7 @@ public abstract class ConnectionManager {
      * Starts and joins threads.
      * @param threads threads
      */
-    private void startAndJoinThreads(List<Thread> threads) {
+    protected void startAndJoinThreads(List<Thread> threads) {
         for (Thread thread : threads) {
             thread.start();
         }

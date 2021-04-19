@@ -77,7 +77,7 @@ public class ActiveReplica extends Replica {
     /**
      * Constructs an active replica.
      * @param name the name of this node in the distributed system
-     * @param logName
+     * @param logName the name of the log file; if null, log will be written in stdout
      */
     public ActiveReplica(String name, String logName) {
         this(name, DEFAULT_HEARTBEAT_INTERVAL, DEFAULT_HEARTBEAT_TOLERANCE, DEFAULT_CHECKPOINT_INTERVAL, logName);
@@ -237,9 +237,9 @@ public class ActiveReplica extends Replica {
             sendResponse(source, "ACK");
         }
         
-        // Get,<key>
-        // Increment,<key>
-        // Decrement,<key>
+        // Get,<key>,<timestamp>
+        // Increment,<key>,<timestamp>
+        // Decrement,<key>,<timestamp>
         else if (operation.equals("Get") || operation.equals("Increment") || operation.equals("Decrement")) {
             userRequestsLock.writeLock().lock();
             try {
@@ -372,7 +372,7 @@ public class ActiveReplica extends Replica {
         String operation = strs[1];
         String key = strs[2];
         
-        // <source>,Get,<key>
+        // <source>,Get,<key>,<timestamp>
         if (operation.equals("Get")) {
             String response;
             dataLock.readLock().lock();
@@ -391,7 +391,7 @@ public class ActiveReplica extends Replica {
             sendResponse(source, response);
         }
         
-        // <source>,Increment,<key>
+        // <source>,Increment,<key>,<timestamp>
         else if (operation.equals("Increment")) {
             String response;
             dataLock.writeLock().lock();
@@ -411,7 +411,7 @@ public class ActiveReplica extends Replica {
             sendResponse(source, response);
         }
         
-        // <source>,Decrement,<key>
+        // <source>,Decrement,<key>,<timestamp>
         else if (operation.equals("Decrement")) {
             String response;
             dataLock.writeLock().lock();
@@ -441,7 +441,7 @@ public class ActiveReplica extends Replica {
         String operation = strs[1];
         String key = strs[2];
         
-        // <source>,Get,<key>
+        // <source>,Get,<key>,<timestamp>
         if (operation.equals("Get")) {
             logBuilderLock.writeLock().lock();
             try {
@@ -451,7 +451,7 @@ public class ActiveReplica extends Replica {
             }
         }
         
-        // <source>,Increment,<key>
+        // <source>,Increment,<key>,<timestamp>
         else if (operation.equals("Increment")) {
             dataLock.writeLock().lock();
             logBuilderLock.writeLock().lock();
@@ -466,7 +466,7 @@ public class ActiveReplica extends Replica {
             }
         }
         
-        // <source>,Decrement,<key>
+        // <source>,Decrement,<key>,<timestamp>
         else if (operation.equals("Decrement")) {
             dataLock.writeLock().lock();
             logBuilderLock.writeLock().lock();
@@ -491,14 +491,14 @@ public class ActiveReplica extends Replica {
         String operation = strs[1];
         String key = strs[2];
         
-        // <source>,Increment,<key>
+        // <source>,Increment,<key>,<timestamp>
         if (operation.equals("Increment")) {
             if (data.containsKey(key)) {
                 data.put(key, data.get(key) + 1);
             }
         }
         
-        // <source>,Decrement,<key>
+        // <source>,Decrement,<key>,<timestamp>
         else if (operation.equals("Decrement")) {
             if (data.containsKey(key)) {
                 data.put(key, data.get(key) - 1);
@@ -715,7 +715,11 @@ public class ActiveReplica extends Replica {
         }
         System.out.print(sb.toString());
     }
-
+    
+    /**
+     * Launches an active replica
+     * @param args arguments
+     */
     public static void main(String[] args) {
         ActiveReplica node = new ActiveReplica(args[0], args.length >= 2 ? args[1] : null);
         Scanner scanner = new Scanner(System.in);

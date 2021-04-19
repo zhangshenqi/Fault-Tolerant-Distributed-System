@@ -6,6 +6,8 @@ import java.util.Arrays;
  *
  */
 public class PassiveUser extends User {
+     private String primaryReplica;
+    
     /**
      * Constructs a passive user.
      * @param name the name of this node in the distributed system
@@ -21,6 +23,7 @@ public class PassiveUser extends User {
      */
     public PassiveUser(String name, String logName) {
         super(name, logName);
+        this.primaryReplica = "";
     }
     
     /**
@@ -34,8 +37,18 @@ public class PassiveUser extends User {
         if (membership.length() == 0) {
             return "Error: No server is available!";
         }
-        
         String[] members = membership.split(",");
+        
+        // If the primary replica changes, make sure that it has finished upgrading.
+        if (!primaryReplica.equals(members[0])) {
+            printLog("Primary Replica changes.");
+            if (sendRequest(members[0], "Upgraded") == null) {
+                return "Error: No server is available!";
+            } else {
+                primaryReplica = members[0];
+            }
+        }
+        
         String response = sendRequest(members[0], request);
         if (response == null) {
             response = "Error: No server is available!";

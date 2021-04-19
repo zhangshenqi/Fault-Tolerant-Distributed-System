@@ -191,7 +191,7 @@ public class Replica extends FaultDetector {
         StringBuilder sb = new StringBuilder();
         sb.append("data = ");
         if (!this.data.isEmpty()) {
-            for (String key : data.keySet()) {
+            for (String key : this.data.keySet()) {
                 int value = data.get(key);
                 sb.append(key).append(':').append(value).append(", ");
             }
