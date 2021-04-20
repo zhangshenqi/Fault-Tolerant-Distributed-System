@@ -15,6 +15,7 @@ import java.net.SocketException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -27,15 +28,127 @@ import java.util.Map;
  */
 public abstract class ConnectionManager {
     /**
+     * Request types in this distributed system.
+     */
+    protected enum REQUEST_TYPE {ALIVE,
+                                 DEAD,
+                                 MEMBERSHIP,
+                                 HEARTBEAT_INTERVAL,
+                                 HEARTBEAT_TOLERANCE,
+                                 CHECKPOINT_INTERVAL,
+                                 GET,
+                                 INCREMENT,
+                                 DECREMENT,
+                                 VOTE,
+                                 DO,
+                                 GIVE_UP,
+                                 BLOCK,
+                                 UNBLOCK,
+                                 RESTORE,
+                                 CURRENT_USER_REQUEST,
+                                 PREVIOUS_USER_REQUEST,
+                                 CHECKPOINT,
+                                 UPGRADED,
+                                 UNKNOWN};
+    /**
+     * Message types in this distributed system.
+     */
+    protected enum MESSAGE_TYPE {HEARTBEAT,
+                                 UNKNOWN};
+    /**
      * Operations provided in this connection manager.
      */
-    private enum OPERATION {SEND_REQUEST, RECEIVE_REQUEST,
-                            SEND_RESPONSE, RECEIVE_RESPONSE,
-                            SEND_MESSAGE, RECEIVE_MESSAGE};
+    private enum OPERATION {SEND_REQUEST,
+                            RECEIVE_REQUEST,
+                            SEND_RESPONSE,
+                            RECEIVE_RESPONSE,
+                            SEND_MESSAGE,
+                            RECEIVE_MESSAGE};
+    /**
+     * Request headers in this distributed system.
+     */
+    private static final String[] REQUEST_HEADER = {"Alive",
+                                                    "Dead",
+                                                    "Membership",
+                                                    "HeartbeatInterval",
+                                                    "HeartbeatTolerance",
+                                                    "CheckpointInterval",
+                                                    "Get",
+                                                    "Increment",
+                                                    "Decrement",
+                                                    "Vote",
+                                                    "Do",
+                                                    "GiveUp",
+                                                    "Block",
+                                                    "Unblock",
+                                                    "Restore",
+                                                    "CurrentUserRequest",
+                                                    "PreviousUserRequest",
+                                                    "Checkpoint",
+                                                    "Upgraded"};
+    /**
+     * Message headers in this distributed system.
+     */
+    private static final String[] MESSAGE_HEADER = {"Heatbeat"};
+    /**
+     * Request types in this distributed system.
+     * Keys are request headers. Values are request types.
+     */
+    private static final Map<String, REQUEST_TYPE> REQUEST_TYPES;
+    static {
+        Map<String, REQUEST_TYPE> requestTypesMap = new HashMap<String, REQUEST_TYPE>(REQUEST_HEADER.length);
+        REQUEST_TYPE[] requestTypeValues = REQUEST_TYPE.values();
+        for (int i = 0; i < REQUEST_HEADER.length; i++) {
+            requestTypesMap.put(REQUEST_HEADER[i], requestTypeValues[i]);
+        }
+        REQUEST_TYPES = Collections.unmodifiableMap(requestTypesMap);
+    }
+    /**
+     * Message types in this distributed system.
+     * Keys are message headers. Values are message types.
+     */
+    private static final Map<String, MESSAGE_TYPE> MESSAGE_TYPES;
+    static {
+        Map<String, MESSAGE_TYPE> messageTypesMap = new HashMap<String, MESSAGE_TYPE>(REQUEST_HEADER.length);
+        MESSAGE_TYPE[] messageTypeValues = MESSAGE_TYPE.values();
+        for (int i = 0; i < MESSAGE_HEADER.length; i++) {
+            messageTypesMap.put(MESSAGE_HEADER[i], messageTypeValues[i]);
+        }
+        MESSAGE_TYPES = Collections.unmodifiableMap(messageTypesMap);
+    }
     /**
      * Size of the packet data when receiving message.
      */
     private static final int BUF_SIZE = 100;
+    
+    /**
+     * Gets the header of the text.
+     * @param text text
+     * @return header of the text
+     */
+    protected static String getTextHeader(String text) {
+        int index = text.indexOf('|');
+        return index < 0 ? text : text.substring(0, index);
+    }
+    
+    /**
+     * Gets the type of the request.
+     * @param request request
+     * @return type of the request
+     */
+    protected static REQUEST_TYPE getRequestType(String request) {
+        return REQUEST_TYPES.getOrDefault(getTextHeader(request), REQUEST_TYPE.UNKNOWN);
+    }
+    
+    /**
+     * Gets the type of the message.
+     * @param message message
+     * @return type of the message
+     */
+    protected static MESSAGE_TYPE getMessageType(String message) {
+        return MESSAGE_TYPES.getOrDefault(getTextHeader(message), MESSAGE_TYPE.UNKNOWN);
+    }
+    
     /**
      * Name of this node in the distributed system.
      */
