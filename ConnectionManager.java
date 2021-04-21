@@ -28,7 +28,7 @@ import java.util.Map;
  */
 public abstract class ConnectionManager {
     /**
-     * Request types in this distributed system.
+     * Request types in the distributed system.
      */
     protected enum REQUEST_TYPE {ALIVE,
                                  DEAD,
@@ -45,13 +45,13 @@ public abstract class ConnectionManager {
                                  BLOCK,
                                  UNBLOCK,
                                  RESTORE,
-                                 CURRENT_USER_REQUEST,
-                                 PREVIOUS_USER_REQUEST,
+                                 CURRENT,
+                                 PREVIOUS,
                                  CHECKPOINT,
                                  UPGRADED,
                                  UNKNOWN};
     /**
-     * Message types in this distributed system.
+     * Message types in the distributed system.
      */
     protected enum MESSAGE_TYPE {HEARTBEAT,
                                  UNKNOWN};
@@ -65,7 +65,7 @@ public abstract class ConnectionManager {
                             SEND_MESSAGE,
                             RECEIVE_MESSAGE};
     /**
-     * Request headers in this distributed system.
+     * Request headers in the distributed system.
      */
     private static final String[] REQUEST_HEADER = {"Alive",
                                                     "Dead",
@@ -82,39 +82,39 @@ public abstract class ConnectionManager {
                                                     "Block",
                                                     "Unblock",
                                                     "Restore",
-                                                    "CurrentUserRequest",
-                                                    "PreviousUserRequest",
+                                                    "Current",
+                                                    "Previous",
                                                     "Checkpoint",
                                                     "Upgraded"};
     /**
-     * Message headers in this distributed system.
+     * Message headers in the distributed system.
      */
     private static final String[] MESSAGE_HEADER = {"Heatbeat"};
     /**
-     * Request types in this distributed system.
+     * Request types in the distributed system.
      * Keys are request headers. Values are request types.
      */
     private static final Map<String, REQUEST_TYPE> REQUEST_TYPES;
     static {
-        Map<String, REQUEST_TYPE> requestTypesMap = new HashMap<String, REQUEST_TYPE>(REQUEST_HEADER.length);
+        Map<String, REQUEST_TYPE> requestTypes = new HashMap<String, REQUEST_TYPE>(REQUEST_HEADER.length);
         REQUEST_TYPE[] requestTypeValues = REQUEST_TYPE.values();
         for (int i = 0; i < REQUEST_HEADER.length; i++) {
-            requestTypesMap.put(REQUEST_HEADER[i], requestTypeValues[i]);
+            requestTypes.put(REQUEST_HEADER[i], requestTypeValues[i]);
         }
-        REQUEST_TYPES = Collections.unmodifiableMap(requestTypesMap);
+        REQUEST_TYPES = Collections.unmodifiableMap(requestTypes);
     }
     /**
-     * Message types in this distributed system.
+     * Message types in the distributed system.
      * Keys are message headers. Values are message types.
      */
     private static final Map<String, MESSAGE_TYPE> MESSAGE_TYPES;
     static {
-        Map<String, MESSAGE_TYPE> messageTypesMap = new HashMap<String, MESSAGE_TYPE>(REQUEST_HEADER.length);
+        Map<String, MESSAGE_TYPE> messageTypes = new HashMap<String, MESSAGE_TYPE>(MESSAGE_HEADER.length);
         MESSAGE_TYPE[] messageTypeValues = MESSAGE_TYPE.values();
         for (int i = 0; i < MESSAGE_HEADER.length; i++) {
-            messageTypesMap.put(MESSAGE_HEADER[i], messageTypeValues[i]);
+            messageTypes.put(MESSAGE_HEADER[i], messageTypeValues[i]);
         }
-        MESSAGE_TYPES = Collections.unmodifiableMap(messageTypesMap);
+        MESSAGE_TYPES = Collections.unmodifiableMap(messageTypes);
     }
     /**
      * Size of the packet data when receiving message.
@@ -240,7 +240,7 @@ public abstract class ConnectionManager {
             return null;
         }
         
-        request = new StringBuilder(name).append(',').append(request).toString();
+        request = new StringBuilder(name).append('|').append(request).toString();
         Peer peer = peers.get(destination);
         return sendRequest(peer, request, peer.clientSocket == null);
     }
@@ -385,15 +385,13 @@ public abstract class ConnectionManager {
             return;
         }
         
-        message = new StringBuilder(name).append(',').append(message).toString();
+        message = new StringBuilder(name).append('|').append(message).toString();
         Peer peer = peers.get(destination);
         byte[] buf = message.getBytes();
         try {
             DatagramPacket packet = new DatagramPacket(buf, buf.length, InetAddress.getByName(peer.address), peer.backendPort);
             datagramSocket.send(packet);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        } catch (IOException e) {}
     }
     
     /**
@@ -493,7 +491,7 @@ public abstract class ConnectionManager {
      * Peer node in the distributed system.
      *
      */
-    private class Peer {
+    private static class Peer {
         /**
          * Name of the peer.
          */
@@ -649,7 +647,7 @@ public abstract class ConnectionManager {
                 String request = null, source = null;
                 boolean firstRequest = true;
                 while ((request = reader.readLine()) != null) {
-                    int index = request.indexOf(',');
+                    int index = request.indexOf('|');
                     if (firstRequest) {
                         source = request.substring(0, index);
                         peers.get(source).serverWriter = writer;
@@ -688,7 +686,7 @@ public abstract class ConnectionManager {
                     datagramSocket.receive(packet);
                     buf = packet.getData();
                     String message = new String(buf, 0, packet.getLength());
-                    int index = message.indexOf(',');
+                    int index = message.indexOf('|');
                     String source = message.substring(0, index);
                     message = message.substring(index + 1);
                     if (enableMessageLog) {
