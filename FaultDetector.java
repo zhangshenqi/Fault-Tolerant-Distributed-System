@@ -14,7 +14,7 @@ public class FaultDetector extends ConnectionManager {
     /**
      * Default heartbeat interval.
      */
-    protected static final int DEFAULT_HEARTBEAT_INTERVAL = 1000;
+    protected static final int DEFAULT_HEARTBEAT_INTERVAL = 200;
     /**
      * Default heartbeat tolerance.
      */
@@ -32,7 +32,8 @@ public class FaultDetector extends ConnectionManager {
      */
     protected int heartbeatInterval;
     /**
-     * Heartbeat tolerance. When the number of consecutive missing heartbeats reaches the tolerance, a child is considered dead.
+     * Heartbeat tolerance.
+     * When the number of consecutive missing heartbeats reaches the tolerance, a child is considered dead.
      */
     private int heartbeatTolerance;
     
@@ -108,91 +109,6 @@ public class FaultDetector extends ConnectionManager {
     }
     
     /**
-     * Handles the request from the source.
-     * @param source source of the request in the distributed system
-     * @param request request
-     */
-    @Override
-    protected void handleRequest(String source, String request) {
-        String[] strs = request.split(",");
-        String operation = strs[0];
-        
-        // Alive,<node>
-        if (operation.equals("Alive")) {
-            printLog(strs[1] + " is alive.");
-            sendResponse(source, "ACK");
-            sendRequestToParents(request);
-        }
-        
-        // Dead,<node>
-        else if (operation.equals("Dead")) {
-            printLog(strs[1] + " is dead.");
-            sendResponse(source, "ACK");
-            sendRequestToParents(request);
-        }
-        
-        // HeartbeatInterval,<interval>
-        else if (operation.equals("HeartbeatInterval")) {
-            // If heartbeat interval decreases, set children's interval first.
-            // If heartbeat interval increases, set the interval of this node first.
-            int interval = Integer.valueOf(strs[1]);
-            if (interval < heartbeatInterval) {
-                sendRequestToChildren(request);
-                setHeartbeatInterval(interval);
-            } else {
-                setHeartbeatInterval(interval);
-                sendRequestToChildren(request);
-            }
-            sendResponse(source, "ACK");
-        }
-        
-        // HeartbeatTolerance,<tolerance>
-        else if (operation.equals("HeartbeatTolerance")) {
-            setHeartbeatTolerance(Integer.valueOf(strs[1]));
-            sendResponse(source, "ACK");
-            sendRequestToChildren(request);
-        }
-    }
-    
-    /**
-     * Handles the message from the source.
-     * @param source the source in the distributed system
-     * @param message message
-     */
-    @Override
-    protected void handleMessage(String source, String message) {
-        String[] strs = message.split(",");
-        String operation = strs[0];
-        
-        // Heartbeat
-        if (operation.equals("Heartbeat")) {
-            if (childrenTolerance.containsKey(source)) {
-                AtomicInteger childTolerance = childrenTolerance.get(source);
-                if (childTolerance.getAndSet(heartbeatTolerance) <= 0) {
-                    printLog(source + " is alive.");
-                    sendRequestToParents("Alive," + source);
-                }
-            }
-        }
-    }
-    
-    /**
-     * Sends request to parents concurrently.
-     * @param request request
-     */
-    protected void sendRequestToParents(String request) {
-        sendRequestToGroup(parents, request);
-    }
-    
-    /**
-     * Sends request to children concurrently.
-     * @param request request
-     */
-    protected void sendRequestToChildren(String request) {
-        sendRequestToGroup(childrenTolerance.keySet(), request);
-    }
-    
-    /**
      * Sets heartbeat interval.
      * @param heartbeatInterval heartbeat interval
      */
@@ -212,6 +128,140 @@ public class FaultDetector extends ConnectionManager {
             this.heartbeatTolerance = heartbeatTolerance;
         }
         printLog("heartbeat tolerance = " + this.heartbeatTolerance);
+    }
+    
+    /**
+     * Sends request to parents concurrently.
+     * @param request request
+     */
+    protected void sendRequestToParents(String request) {
+        sendRequestToGroup(parents, request);
+    }
+    
+    /**
+     * Sends request to children concurrently.
+     * @param request request
+     */
+    protected void sendRequestToChildren(String request) {
+        sendRequestToGroup(childrenTolerance.keySet(), request);
+    }
+    
+    /**
+     * Handles the request from the source.
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    @Override
+    protected void handleRequest(String source, String request) {
+        switch (getRequestType(request)) {
+        case ALIVE:
+            handleAliveRequest(source, request);
+            break;
+        case DEAD:
+            handleDeadRequest(source, request);
+            break;
+        case HEARTBEAT_INTERVAL:
+            handleHeartbeatIntervalRequest(source, request);
+            break;
+        case HEARTBEAT_TOLERANCE:
+            handleHeartbeatToleranceRequest(source, request);
+            break;
+        default:
+            printLog(new StringBuilder("Error: Invalid request ").append(request).append('!').toString());
+            System.exit(0);
+        }
+    }
+    
+    /**
+     * Handles the alive request from the source.
+     * Alive|<node>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleAliveRequest(String source, String request) {
+        String node = request.substring(request.indexOf('|') + 1);
+        printLog(node + " is alive.");
+        sendRequestToParents(request);
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the dead request from the source.
+     * Dead|<node>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleDeadRequest(String source, String request) {
+        String node = request.substring(request.indexOf('|') + 1);
+        printLog(node + " is dead.");
+        sendRequestToParents(request);
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the heartbeat interval request from the source.
+     * HeartbeatInterval|<interval>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleHeartbeatIntervalRequest(String source, String request) {
+        // If heartbeat interval decreases, set children's interval first.
+        // If heartbeat interval increases, set the interval of this node first.
+        int interval = Integer.valueOf(request.substring(request.indexOf('|') + 1));
+        if (interval < heartbeatInterval) {
+            sendRequestToChildren(request);
+            setHeartbeatInterval(interval);
+        } else {
+            setHeartbeatInterval(interval);
+            sendRequestToChildren(request);
+        }
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the heartbeat tolerance request from the source.
+     * HeartbeatTolerance|<tolerance>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleHeartbeatToleranceRequest(String source, String request) {
+        int tolerance = Integer.valueOf(request.substring(request.indexOf('|') + 1));
+        setHeartbeatTolerance(tolerance);
+        sendRequestToChildren(request);
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the message from the source.
+     * @param source the source in the distributed system
+     * @param message message
+     */
+    @Override
+    protected void handleMessage(String source, String message) {
+        switch (getMessageType(message)) {
+        case HEARTBEAT:
+            handleHeartbeatMessage(source, message);
+            break;
+        default:
+            printLog(new StringBuilder("Error: Invalid message ").append(message).append('!').toString());
+            System.exit(0);
+        }
+    }
+    
+    /**
+     * Handles the heartbeat message from the source.
+     * Heartbeat
+     * @param source the source in the distributed system
+     * @param message message
+     */
+    protected void handleHeartbeatMessage(String source, String message) {
+        if (childrenTolerance.containsKey(source)) {
+            AtomicInteger childTolerance = childrenTolerance.get(source);
+            if (childTolerance.getAndSet(heartbeatTolerance) <= 0) {
+                printLog(source + " is alive.");
+                sendRequestToParents("Alive|" + source);
+            }
+        }
     }
     
     /**
@@ -287,7 +337,7 @@ public class FaultDetector extends ConnectionManager {
                         int updatedChildTolerance = childTolerance.decrementAndGet();
                         if (updatedChildTolerance == 0) {
                             printLog(child + " is dead.");
-                            sendRequestToParents("Dead," + child);
+                            sendRequestToParents("Dead|" + child);
                         }
                     }
                 }

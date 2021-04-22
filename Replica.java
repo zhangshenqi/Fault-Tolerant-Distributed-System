@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * A basic replica which does not handle requests from users.
+ * A basic replica.
  * @author Shenqi Zhang
  *
  */
@@ -42,10 +42,6 @@ public class Replica extends FaultDetector {
      * Lock for membership.
      */
     protected final ReentrantReadWriteLock membershipLock;
-    /**
-     * Lock for user requests.
-     */
-    protected final ReentrantReadWriteLock userRequestsLock;
     
     /**
      * Constructs a replica.
@@ -103,47 +99,96 @@ public class Replica extends FaultDetector {
         }
         this.dataLock = new ReentrantReadWriteLock();
         this.membershipLock = new ReentrantReadWriteLock();
-        this.userRequestsLock = new ReentrantReadWriteLock();
         
         printParameters();
     }
     
     /**
-     * Handles the request from the source.
-     * @param source source of the request in the distributed system
-     * @param request request
+     * Serializes data.
+     * @return string representation of data
      */
-    @Override
-    protected void handleRequest(String source, String request) {
-        String[] strs = request.split(",");
-        String operation = strs[0];
-        
-        // HeartbeatInterval,<interval>
-        // HeartbeatTolerance,<tolerance>
-        if (operation.equals("HeartbeatInterval") || operation.equals("HeartbeatTolerance")) {
-            super.handleRequest(source, request);
+    protected String serializeData() {
+        if (data.isEmpty()) {
+            return "";
         }
         
-        // CheckpointInterval,<interval>
-        else if (operation.equals("CheckpointInterval")) {
-            setCheckpointInterval(Integer.valueOf(strs[1]));
-            sendResponse(source, "ACK");
+        StringBuilder sb = new StringBuilder();
+        for (String key : data.keySet()) {
+            sb.append(key).append(',').append(data.get(key)).append(',');
         }
-        
-        // Membership,<member1>,<member2> ...
-        else if (operation.equals("Membership")) {
-            membershipLock.writeLock().lock();
-            try {
-                membership.clear();
-                for (int i = 1; i < strs.length; i++) {
-                    membership.add(strs[i]);
-                }
-            } finally {
-                membershipLock.writeLock().unlock();
+        sb.setLength(sb.length() - 1);
+        return sb.toString();
+    }
+    
+    /**
+     * Deserializes data.
+     * @param s string representation of data
+     */
+    protected void deserializeData(String s) {
+        data.clear();
+        if (s.length() > 0) {
+            String[] strs = s.split(",");
+            for (int i = 0; i < strs.length; i += 2) {
+                String key = strs[i];
+                int value = Integer.valueOf(strs[i + 1]);
+                data.put(key, value);
             }
-            printMembership();
-            sendResponse(source, "ACK");
         }
+    }
+    
+    /**
+     * Deserializes membership.
+     * @param s string representation of membership
+     */
+    protected void deserializeMembership(String s) {
+        membership.clear();
+        if (s.length() > 0) {
+            String[] strs = s.split(",");
+            for (String member : strs) {
+                membership.add(member);
+            }
+        }
+    }
+    
+    /**
+     * Returns the value to which the specified key is mapped, or null if the data contains no mapping for the key.
+     * @param key key
+     * @return the value to which the specified key is mapped, or null if the data contains no mapping for the key
+     */
+    protected Integer get(String key) {
+        return data.get(key);
+    }
+    
+    /**
+     * Increments the value to which the specified key is mapped.
+     * @param key key
+     * @return the value to which the specified key is mapped after the increment, or null if the data contains no mapping for the key
+     */
+    protected Integer increment(String key) {
+        Integer value = data.get(key);
+        if (value == null) {
+            return null;
+        }
+        
+        value++;
+        data.put(key, value);
+        return value;
+    }
+    
+    /**
+     * Decrements the value to which the specified key is mapped.
+     * @param key key
+     * @return the value to which the specified key is mapped after the decrement, or null if the data contains no mapping for the key
+     */
+    protected Integer decrement(String key) {
+        Integer value = data.get(key);
+        if (value == null) {
+            return null;
+        }
+        
+        value--;
+        data.put(key, value);
+        return value;
     }
     
     /**
@@ -158,20 +203,126 @@ public class Replica extends FaultDetector {
     }
     
     /**
-     * Gets the checkpoint
-     * @return checkpoint
+     * Handles the request from the source.
+     * @param source source of the request in the distributed system
+     * @param request request
      */
-    protected String getCheckpoint() {
-        if (data.isEmpty()) {
-            return "";
+    @Override
+    protected void handleRequest(String source, String request) {
+        switch (getRequestType(request)) {
+        case MEMBERSHIP:
+            handleMembershipRequest(source, request);
+            break;
+        case HEARTBEAT_INTERVAL:
+            handleHeartbeatIntervalRequest(source, request);
+            break;
+        case HEARTBEAT_TOLERANCE:
+            handleHeartbeatToleranceRequest(source, request);
+            break;
+        case CHECKPOINT_INTERVAL:
+            handleCheckpointIntervalRequest(source, request);
+            break;
+        case GET:
+            handleGetRequest(source, request);
+            break;
+        case INCREMENT:
+            handleIncrementRequest(source, request);
+            break;
+        case DECREMENT:
+            handleDecrementRequest(source, request);
+            break;
+        default:
+            printLog(new StringBuilder("Error: Invalid request ").append(request).append('!').toString());
+            System.exit(0);
         }
-        
-        StringBuilder sb = new StringBuilder();
-        for (String key : data.keySet()) {
-            sb.append(key).append(',').append(data.get(key)).append(',');
+    }
+    
+    /**
+     * Handles the membership interval request from the source.
+     * Membership|<member1>,<member2> ...
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleMembershipRequest(String source, String request) {
+        int index = request.indexOf('|');
+        String membershipStr = index == request.length() - 1 ? "" : request.substring(index + 1);
+        membershipLock.writeLock().lock();
+        try {
+            deserializeMembership(membershipStr);
+        } finally {
+            membershipLock.writeLock().unlock();
         }
-        sb.setLength(sb.length() - 1);
-        return sb.toString();
+        printMembership();
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the checkpoint interval request from the source.
+     * Checkpoint|<node>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleCheckpointIntervalRequest(String source, String request) {
+        int interval = Integer.valueOf(request.substring(request.indexOf('|') + 1));
+        setCheckpointInterval(Integer.valueOf(interval));
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the get request from the source.
+     * Get|<key>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleGetRequest(String source, String request) {
+        String key = request.substring(request.indexOf('|') + 1, request.indexOf(','));
+        Integer value;
+        dataLock.readLock().lock();
+        try {
+            value = get(key);
+        } finally {
+            dataLock.readLock().unlock();
+        }
+        String response = value == null ? "No such key." : String.valueOf(value);
+        sendResponse(source, response);
+    }
+    
+    /**
+     * Handles the increment request from the source.
+     * Increment|<key>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleIncrementRequest(String source, String request) {
+        String key = request.substring(request.indexOf('|') + 1, request.indexOf(','));
+        Integer value;
+        dataLock.writeLock().lock();
+        try {
+            value = increment(key);
+        } finally {
+            dataLock.writeLock().unlock();
+        }
+        String response = value == null ? "No such key." : String.valueOf(value);
+        sendResponse(source, response);
+    }
+    
+    /**
+     * Handles the decrement request from the source.
+     * Decrement|<key>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleDecrementRequest(String source, String request) {
+        String key = request.substring(request.indexOf('|') + 1, request.indexOf(','));
+        Integer value;
+        dataLock.writeLock().lock();
+        try {
+            value = decrement(key);
+        } finally {
+            dataLock.writeLock().unlock();
+        }
+        String response = value == null ? "No such key." : String.valueOf(value);
+        sendResponse(source, response);
     }
     
     /**

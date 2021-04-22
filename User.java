@@ -1,3 +1,4 @@
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Random;
 import java.util.Scanner;
@@ -7,7 +8,7 @@ import java.util.Scanner;
  * @author Shenqi Zhang
  *
  */
-public abstract class User extends ConnectionManager {
+public class User extends ConnectionManager {
     /**
      * Replica manager.
      */
@@ -55,7 +56,21 @@ public abstract class User extends ConnectionManager {
      * @param request request
      * @return response
      */
-    protected abstract String sendRequestToReplicas(String request);
+    protected String sendRequestToReplicas(String request) {
+        String membership = sendRequest(replicaManager, "Membership");
+        if (membership.length() == 0) {
+            return "Error: No server is available!";
+        }
+        
+        Map<String, String> responses = sendRequestToGroup(Arrays.asList(membership.split(",")), request);
+        for (String response : responses.values()) {
+            if (response != null) {
+                return response;
+            }
+        }
+        
+        return "Error: No server is available!";
+    }
     
     /**
      * Tests the specified user node.
@@ -103,11 +118,11 @@ public abstract class User extends ConnectionManager {
             
             StringBuilder sb = new StringBuilder();
             if (operation.equals("1")) {
-                sb.append("Get,");
+                sb.append("Get|");
             } else if (operation.equals("2")) {
-                sb.append("Increment,");
+                sb.append("Increment|");
             } else {
-                sb.append("Decrement,");
+                sb.append("Decrement|");
             }
             sb.append(key).append(',').append(System.currentTimeMillis());
             String request = sb.toString();
@@ -123,17 +138,22 @@ public abstract class User extends ConnectionManager {
     protected static void autoTest(User node) {
         Random random = new Random();
         while (true) {
+            try {
+                Thread.sleep(random.nextInt(10) + 1);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             StringBuilder sb = new StringBuilder();
             int operation = random.nextInt(3) + 1;
             switch (operation) {
             case 1:
-                sb.append("Get,");
+                sb.append("Get|");
                 break;
             case 2:
-                sb.append("Increment,");
+                sb.append("Increment|");
                 break;
             case 3:
-                sb.append("Decrement,");
+                sb.append("Decrement|");
                 break;
             default:
                 System.out.println("Error: Invalid operation!");
@@ -151,5 +171,14 @@ public abstract class User extends ConnectionManager {
      */
     private void printParameters() {
         printLog("replica_manager = " + this.replicaManager);
+    }
+    
+    /**
+     * Launches a user and tests it.
+     * @param args arguments
+     */
+    public static void main(String[] args) {
+        User node = new User(args[0], args.length >= 2 ? args[1] : null);
+        test(node);
     }
 }

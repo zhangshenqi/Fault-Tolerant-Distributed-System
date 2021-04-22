@@ -71,77 +71,10 @@ public class ReplicaManager extends FaultDetector {
     }
     
     /**
-     * Handles the request from the source.
-     * @param source source of the request in the distributed system
-     * @param request request
+     * Serializes membership.
+     * @return string representation of membership
      */
-    @Override
-    protected void handleRequest(String source, String request) {
-        String[] strs = request.split(",");
-        String operation = strs[0];
-        
-        // Alive,<node>
-        if (operation.equals("Alive")) {
-            String node = strs[1];
-            printLog(node + " is alive.");
-            sendResponse(source, "ACK");
-            if (replicas.contains(node)) {
-                membershipLock.writeLock().lock();
-                try {
-                    if (membership.add(node)) {
-                        sendRequestToGroup(membership, getMembershipRequest());
-                    }
-                } finally {
-                    membershipLock.writeLock().unlock();
-                }
-            }
-        }
-        
-        // Dead,<node>
-        else if (operation.equals("Dead")) {
-            String node = strs[1];
-            printLog(node + " is dead.");
-            sendResponse(source, "ACK");
-            if (replicas.contains(node)) {
-                membershipLock.writeLock().lock();
-                try {
-                    if (membership.remove(node)) {
-                        sendRequestToGroup(membership, getMembershipRequest());
-                    }
-                } finally {
-                    membershipLock.writeLock().unlock();
-                }
-            }
-        }
-        
-        // Membership
-        else if (operation.equals("Membership")) {
-            membershipLock.readLock().lock();
-            try {
-                sendResponse(source, getMembershipResponse());
-            } finally {
-                membershipLock.readLock().unlock();
-            }
-        }
-    }
-    
-    /**
-     * Gets membership request.
-     * @return membership request
-     */
-    private String getMembershipRequest() {
-        StringBuilder sb = new StringBuilder("Membership");
-        for (String member : membership) {
-            sb.append(',').append(member);
-        }
-        return sb.toString();
-    }
-    
-    /**
-     * Gets membership response
-     * @return membership response
-     */
-    private String getMembershipResponse() {
+    protected String serializeMembership() {
         if (membership.isEmpty()) {
             return "";
         }
@@ -163,11 +96,11 @@ public class ReplicaManager extends FaultDetector {
         // If heartbeat interval decreases, set children's interval first.
         // If heartbeat interval increases, set the interval of this node first.
         if (heartbeatInterval < this.heartbeatInterval) {
-            sendRequestToChildren("HeartbeatInterval," + heartbeatInterval);
+            sendRequestToChildren("HeartbeatInterval|" + heartbeatInterval);
             super.setHeartbeatInterval(heartbeatInterval);
         } else {
             super.setHeartbeatInterval(heartbeatInterval);
-            sendRequestToChildren("HeartbeatInterval," + heartbeatInterval);
+            sendRequestToChildren("HeartbeatInterval|" + heartbeatInterval);
         }
     }
     
@@ -178,7 +111,7 @@ public class ReplicaManager extends FaultDetector {
     @Override
     protected void setHeartbeatTolerance(int heartbeatTolerance) {
         super.setHeartbeatTolerance(heartbeatTolerance);
-        sendRequestToChildren("HeartbeatTolerance," + heartbeatTolerance);
+        sendRequestToChildren("HeartbeatTolerance|" + heartbeatTolerance);
     }
     
     /**
@@ -186,7 +119,93 @@ public class ReplicaManager extends FaultDetector {
      * @param checkpointInterval checkpoint interval
      */
     private void setCheckpointInterval(int checkpointInterval) {
-        sendRequestToGroup(replicas, "CheckpointInterval," + checkpointInterval);
+        sendRequestToGroup(replicas, "CheckpointInterval|" + checkpointInterval);
+    }
+    
+    /**
+     * Handles the request from the source.
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    @Override
+    protected void handleRequest(String source, String request) {
+        switch (getRequestType(request)) {
+        case ALIVE:
+            handleAliveRequest(source, request);
+            break;
+        case DEAD:
+            handleDeadRequest(source, request);
+            break;
+        case MEMBERSHIP:
+            handleMembershipRequest(source, request);
+            break;
+        default:
+            printLog(new StringBuilder("Error: Invalid request ").append(request).append('!').toString());
+            System.exit(0);
+        }
+    }
+    
+    /**
+     * Handles the alive request from the source.
+     * Alive|<node>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    @Override
+    protected void handleAliveRequest(String source, String request) {
+        String node = request.substring(request.indexOf('|') + 1);
+        printLog(node + " is alive.");
+        if (replicas.contains(node)) {
+            membershipLock.writeLock().lock();
+            try {
+                if (membership.add(node)) {
+                    sendRequestToGroup(membership, "Membership|" + serializeMembership());
+                }
+            } finally {
+                membershipLock.writeLock().unlock();
+            }
+        }
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the dead request from the source.
+     * Dead|<node>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    @Override
+    protected void handleDeadRequest(String source, String request) {
+        String node = request.substring(request.indexOf('|') + 1);
+        printLog(node + " is dead.");
+        if (replicas.contains(node)) {
+            membershipLock.writeLock().lock();
+            try {
+                if (membership.remove(node)) {
+                    sendRequestToGroup(membership, "Membership|" + serializeMembership());
+                }
+            } finally {
+                membershipLock.writeLock().unlock();
+            }
+        }
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the membership request from the source.
+     * Membership
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleMembershipRequest(String source, String request) {
+        String response;
+        membershipLock.readLock().lock();
+        try {
+            response = serializeMembership();
+        } finally {
+            membershipLock.readLock().unlock();
+        }
+        sendResponse(source, response);
     }
     
     /**

@@ -89,7 +89,7 @@ public abstract class ConnectionManager {
     /**
      * Message headers in the distributed system.
      */
-    private static final String[] MESSAGE_HEADER = {"Heatbeat"};
+    private static final String[] MESSAGE_HEADER = {"Heartbeat"};
     /**
      * Request types in the distributed system.
      * Keys are request headers. Values are request types.
