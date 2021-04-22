@@ -6,6 +6,9 @@ import java.util.Arrays;
  *
  */
 public class PassiveUser extends User {
+    /**
+     * Primary replica.
+     */
      private String primaryReplica;
     
     /**
@@ -40,6 +43,7 @@ public class PassiveUser extends User {
         String[] members = membership.split(",");
         
         // If the primary replica changes, make sure that it has finished upgrading.
+        // Otherwise, the replica sends response as backup, and re-handles the response while upgrading.
         if (!primaryReplica.equals(members[0])) {
             printLog("Primary Replica changes.");
             if (sendRequest(members[0], "Upgraded") == null) {

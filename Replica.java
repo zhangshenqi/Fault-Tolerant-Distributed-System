@@ -366,7 +366,7 @@ public class Replica extends FaultDetector {
     }
     
     /**
-     * Launches a replica
+     * Launches a replica.
      * @param args arguments
      */
     public static void main(String[] args) {
