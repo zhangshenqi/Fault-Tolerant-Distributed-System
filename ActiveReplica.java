@@ -3,7 +3,6 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Scanner;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -46,13 +45,9 @@ public class ActiveReplica extends Replica {
      */
     private boolean quiescent;
     /**
-     * Lock for checkpoint.
+     * Lock for user requests.
      */
-    private final ReentrantReadWriteLock checkpointLock;
-    /**
-     * Lock for log builder.
-     */
-    private final ReentrantReadWriteLock logBuilderLock;
+    private final ReentrantReadWriteLock userRequestsLock;
     /**
      * Object for restoration.
      */
@@ -108,15 +103,51 @@ public class ActiveReplica extends Replica {
         this.restoredUserRequests = new HashSet<String>();
         this.currentUserRequest = "";
         this.previousUserRequest = "";
-        this.checkpoint = getCheckpoint();
+        this.checkpoint = serializeData();
         this.logBuilder = new StringBuilder();
         this.restored = false;
         this.quiescent = false;
-        this.checkpointLock = new ReentrantReadWriteLock();
-        this.logBuilderLock = new ReentrantReadWriteLock();
+        this.userRequestsLock = new ReentrantReadWriteLock();
         this.restorationObj = new Object();
         this.quiescenceObj = new Object();
         this.userRequestsObj = new Object();
+    }
+    
+    /**
+     * Serializes user requests.
+     * @return string representation of user requests
+     */
+    private String serializeUserRequests() {
+        if (userRequests.isEmpty()) {
+            return "";
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        for (String userRequest : userRequests) {
+            sb.append(userRequest).append(';');
+        }
+        sb.setLength(sb.length() - 1);
+        return sb.toString();
+    }
+    
+    /**
+     * Adds a user request.
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void addUserRequest(String source, String request) {
+        userRequestsLock.writeLock().lock();
+        try {
+            userRequests.add(new StringBuilder(request).append(",").append(source).toString());
+        } finally {
+            userRequestsLock.writeLock().unlock();
+        }
+        
+        if (primary) {
+            synchronized(userRequestsObj) {
+                userRequestsObj.notify();
+            }
+        }
     }
     
     /**
@@ -126,411 +157,454 @@ public class ActiveReplica extends Replica {
      */
     @Override
     protected void handleRequest(String source, String request) {
-        String[] strs = request.split(",");
-        String operation = strs[0];
-        
-        // HeartbeatInterval,<interval>
-        // HeartbeatTolerance,<tolerance>
-        // CheckpointInterval,<interval>
-        if (operation.equals("HeartbeatInterval") || operation.equals("HeartbeatTolerance") || operation.equals("CheckpointInterval")) {
-            super.handleRequest(source, request);
+        switch (getRequestType(request)) {
+        case MEMBERSHIP:
+            handleMembershipRequest(source, request);
+            break;
+        case HEARTBEAT_INTERVAL:
+            handleHeartbeatIntervalRequest(source, request);
+            break;
+        case HEARTBEAT_TOLERANCE:
+            handleHeartbeatToleranceRequest(source, request);
+            break;
+        case CHECKPOINT_INTERVAL:
+            handleCheckpointIntervalRequest(source, request);
+            break;
+        case GET:
+            handleGetRequest(source, request);
+            break;
+        case INCREMENT:
+            handleIncrementRequest(source, request);
+            break;
+        case DECREMENT:
+            handleDecrementRequest(source, request);
+            break;
+        case VOTE:
+            handleVoteRequest(source, request);
+            break;
+        case DO:
+            handleDoRequest(source, request);
+            break;
+        case GIVE_UP:
+            handleGiveUpRequest(source, request);
+            break;
+        case BLOCK:
+            handleBlockRequest(source, request);
+            break;
+        case UNBLOCK:
+            handleUnblockRequest(source, request);
+            break;
+        case RESTORE:
+            handleRestoreRequest(source, request);
+            break;
+        case CURRENT:
+            handleCurrentRequest(source, request);
+            break;
+        case PREVIOUS:
+            handlePreviousRequest(source, request);
+            break;
+        default:
+            printLog(new StringBuilder("Error: Invalid request ").append(request).append('!').toString());
+            System.exit(0);
         }
-        
-        // Membership,<member1>,<member2> ...
-        else if (operation.equals("Membership")) {
-            membershipLock.writeLock().lock();
-            try {
-                membership.clear();
-                for (int i = 1; i < strs.length; i++) {
-                    membership.add(strs[i]);
-                }
-                printMembership();
-                
-                if (!restored) {
-                    // If this is not the first replica, restore data and user requests from another replica.
-                    if (membership.size() > 1) {
-                        printLog("Restore.");
-                        sendRequestToGroup(membership, name, "Block");
-                        String response;
-                        for (String member : membership) {
-                            if (member.equals(name)) {
-                                continue;
-                            }
-                            if ((response = sendRequest(member, "Restore")) != null) {
-                                int index1 = response.indexOf('|');
-                                int index2 = response.indexOf('|', index1 + 1);
-                                String checkpointResponse = index1 == 0 ? "" : response.substring(0, index1);
-                                String logResponse = index2 == index1 + 1 ? "" : response.substring(index1 + 1, index2);
-                                String userRequestsResponse = index2 == response.length() - 1 ? "" : response.substring(index2 + 1);
-                                restoreData(checkpointResponse, logResponse);
-                                checkpoint = getCheckpoint();
-                                restoreUserRequests(userRequestsResponse);
-                                break;
-                            }
+    }
+    
+    /**
+     * Handles the membership request from the source.
+     * Membership|<member1>,<member2> ...
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    @Override
+    protected void handleMembershipRequest(String source, String request) {
+        int index = request.indexOf('|');
+        String membershipStr = index == request.length() - 1 ? "" : request.substring(index + 1);
+        membershipLock.writeLock().lock();
+        try {
+            deserializeMembership(membershipStr);
+            printMembership();
+            
+            if (!restored) {
+                // If this is not the first replica, restore data and user requests from another replica.
+                if (membership.size() > 1) {
+                    printLog("Restore.");
+                    sendRequestToGroup(membership, name, "Block");
+                    String response;
+                    for (String member : membership) {
+                        if (member.equals(name)) {
+                            continue;
                         }
-                        printData();
-                        sendRequestToGroup(membership, name, "Unblock");
+                        if ((response = sendRequest(member, "Restore")) != null) {
+                            int index1 = response.indexOf('&');
+                            int index2 = response.indexOf('&', index1 + 1);
+                            String checkpointResponse = index1 == 0 ? "" : response.substring(0, index1);
+                            String logResponse = index2 == index1 + 1 ? "" : response.substring(index1 + 1, index2);
+                            String userRequestsResponse = index2 == response.length() - 1 ? "" : response.substring(index2 + 1);
+                            restoreData(checkpointResponse, logResponse);
+                            checkpoint = serializeData();
+                            restoreUserRequests(userRequestsResponse);
+                            break;
+                        }
+                    }
+                    printData();
+                    sendRequestToGroup(membership, name, "Unblock");
+                }
+                
+                restored = true;
+                synchronized(restorationObj) {
+                    restorationObj.notify();
+                }
+                new Thread(new CheckpointUpdater()).start();
+            }
+            
+            if (!primary && membership.get(0).equals(name)) {
+                printLog("Become the primary.");
+                primary = true;
+                // There is a corner case.
+                // The previous primary replica dies when some do requests are sent and some are not.
+                // The new primary replica needs to do a synchronization.
+                Map<String, String> responses = sendRequestToGroup(membership, "Current");
+                List<String> busyMembers = new ArrayList<String>();
+                List<String> freeMembers = new ArrayList<String>();
+                Set<String> currentUserRequests = new HashSet<String>();
+                for (String member : responses.keySet()) {
+                    String currentUserRequest = responses.get(member);
+                    if (currentUserRequest != null) {
+                        if (currentUserRequest.isEmpty()) {
+                            freeMembers.add(member);
+                        } else {
+                            busyMembers.add(member);
+                            currentUserRequests.add(currentUserRequest);
+                        }
+                    }
+                }
+                
+                if (!currentUserRequests.isEmpty()) {
+                    // This should never happen.
+                    if (currentUserRequests.size() > 1) {
+                        printLog("Error: Replicas have different current user requests!");
+                        System.exit(0);
                     }
                     
-                    restored = true;
-                    synchronized(restorationObj) {
-                        restorationObj.notify();
-                    }
-                    new Thread(new CheckpointUpdater()).start();
-                }
-                
-                if (!primary && membership.get(0).equals(name)) {
-                    printLog("Become the primary.");
-                    primary = true;
-                    Map<String, String> responses = sendRequestToGroup(membership, "CurrentUserRequest");
-                    List<String> busyMembers = new ArrayList<String>();
-                    List<String> freeMembers = new ArrayList<String>();
-                    Set<String> currentUserRequests = new HashSet<String>();
-                    for (String member : responses.keySet()) {
-                        String currentUserRequest = responses.get(member);
-                        if (currentUserRequest != null) {
-                            if (currentUserRequest.isEmpty()) {
-                                freeMembers.add(member);
-                            } else {
-                                busyMembers.add(member);
-                                currentUserRequests.add(currentUserRequest);
-                            }
-                        }
+                    if (freeMembers.isEmpty()) {
+                        sendRequestToGroup(busyMembers, "Do|" + currentUserRequests.iterator().next());
                     }
                     
-                    if (!currentUserRequests.isEmpty()) {
-                        if (currentUserRequests.size() > 1) {
-                            printLog("Error: Replicas have different current user requests!");
-                            System.exit(0);
+                    else {
+                        responses = sendRequestToGroup(freeMembers, "Previous");
+                        Set<String> previousUserRequests = new HashSet<String>();
+                        for (String previousUserRequest : responses.values()) {
+                            if (previousUserRequest != null && !previousUserRequest.isEmpty()) {
+                                previousUserRequests.add(previousUserRequest);
+                            }
                         }
                         
-                        if (freeMembers.isEmpty()) {
-                            sendRequestToGroup(busyMembers, "Do," + currentUserRequests.iterator().next());
-                        }
-                        
-                        else {
-                            responses = sendRequestToGroup(freeMembers, "PreviousUserRequest");
-                            Set<String> previousUserRequests = new HashSet<String>();
-                            for (String previousUserRequest : responses.values()) {
-                                if (previousUserRequest != null && !previousUserRequest.isEmpty()) {
-                                    previousUserRequests.add(previousUserRequest);
-                                }
+                        if (!previousUserRequests.isEmpty()) {
+                            // This should never happen.
+                            if (previousUserRequests.size() > 1) {
+                                printLog("Error: Replicas have different previous user requests!");
+                                System.exit(0);
                             }
                             
-                            if (!previousUserRequests.isEmpty()) {
-                                if (previousUserRequests.size() > 1) {
-                                    System.err.println("Error: Replicas have different previous user requests!");
-                                    System.exit(0);
-                                }
-                                
-                                if (previousUserRequests.iterator().next().equals(currentUserRequests.iterator().next())) {
-                                    sendRequestToGroup(busyMembers, "Do," + currentUserRequests.iterator().next());
-                                }
+                            // If the previous user requests of free replicas are the same with the current user requests of busy replicas,
+                            // the previous primary replica dies during sending do request.
+                            // Otherwise, the previous primary replica dies during sending vote request.
+                            if (previousUserRequests.iterator().next().equals(currentUserRequests.iterator().next())) {
+                                sendRequestToGroup(busyMembers, "Do|" + currentUserRequests.iterator().next());
                             }
                         }
                     }
-                    new Thread(new VoteInitiator()).start();
                 }
-            } finally {
-                membershipLock.writeLock().unlock();
+                new Thread(new VoteInitiator()).start();
             }
-            sendResponse(source, "ACK");
+        } finally {
+            membershipLock.writeLock().unlock();
+        }
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the get request from the source.
+     * Get|<key>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    @Override
+    protected void handleGetRequest(String source, String request) {
+        addUserRequest(source, request);
+    }
+    
+    /**
+     * Handles the increment request from the source.
+     * Increment|<key>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    @Override
+    protected void handleIncrementRequest(String source, String request) {
+        addUserRequest(source, request);
+    }
+    
+    /**
+     * Handles the decrement request from the source.
+     * Decrement|<key>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleDecrementRequest(String source, String request) {
+        addUserRequest(source, request);
+    }
+    
+    /**
+     * Handles the vote request from the source.
+     * Vote|Get|<key>,<timestamp>,<source>
+     * Vote|Increment|<key>,<timestamp>,<source>
+     * Vote|Decrement|<key>,<timestamp>,<source>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleVoteRequest(String source, String request) {
+        // There is a corner case.
+        // This replica hasn't finished restoration.
+        // The primary has updated the membership and hasn't receive block request.
+        // So this replica should ensures that it is not restoring.
+        waitForRestoration();
+        String userRequest = request.substring(request.indexOf('|') + 1);
+        String response;
+        userRequestsLock.readLock().lock();
+        try {
+            if (userRequests.contains(userRequest) || restoredUserRequests.contains(userRequest)) {
+                response = "Yes";
+                currentUserRequest = userRequest;
+            } else {
+                response = "No";
+            }
+        } finally {
+            userRequestsLock.readLock().unlock();
+        }
+        sendResponse(source, response);
+    }
+    
+    /**
+     * Handles the do request from the source.
+     * Do|Get|<key>,<timestamp>,<source>
+     * Do|Increment|<key>,<timestamp>,<source>
+     * Do|Decrement|<key>,<timestamp>,<source>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleDoRequest(String source, String request) {
+        String userRequest = request.substring(request.indexOf('|') + 1);
+        userRequestsLock.readLock().lock();
+        try {
+            if (userRequests.contains(userRequest)) {
+                handleUserRequest(userRequest);
+            } else {
+                handleRestoredUserRequest(userRequest);
+            }
+        } finally {
+            userRequestsLock.readLock().unlock();
         }
         
-        // Get,<key>,<timestamp>
-        // Increment,<key>,<timestamp>
-        // Decrement,<key>,<timestamp>
-        else if (operation.equals("Get") || operation.equals("Increment") || operation.equals("Decrement")) {
-            userRequestsLock.writeLock().lock();
-            try {
-                userRequests.add(String.join(",", source, request));
-            } finally {
-                userRequestsLock.writeLock().unlock();
-            }
-            synchronized(userRequestsObj) {
-                userRequestsObj.notify();
-            }
+        userRequestsLock.writeLock().lock();
+        try {
+            userRequests.remove(userRequest);
+        } finally {
+            userRequestsLock.writeLock().unlock();
         }
-        
-        // Vote,<request>
-        else if (operation.equals("Vote")) {
-            waitForRestoration();
-            String userRequest = request.substring(request.indexOf(',') + 1);
-            String response;
-            userRequestsLock.readLock().lock();
-            try {
-                if (userRequests.contains(userRequest) || restoredUserRequests.contains(userRequest)) {
-                    response = "Yes";
-                    currentUserRequest = userRequest;
-                } else {
-                    response = "No";
-                }
-            } finally {
-                userRequestsLock.readLock().unlock();
-            }
-            sendResponse(source, response);
-        }
-        
-        // Do,<request>
-        else if (operation.equals("Do")) {
-            String userRequest = request.substring(request.indexOf(',') + 1);
-            userRequestsLock.readLock().lock();
-            try {
-                if (userRequests.contains(userRequest)) {
-                    handleUserRequest(userRequest);
-                } else {
-                    handleRestoredUserRequest(userRequest);
-                }
-            } finally {
-                userRequestsLock.readLock().unlock();
-            }
-            userRequestsLock.writeLock().lock();
-            try {
-                userRequests.remove(userRequest);
-            } finally {
-                userRequestsLock.writeLock().unlock();
-            }
-            restoredUserRequests.remove(userRequest);
-            previousUserRequest = currentUserRequest;
-            currentUserRequest = "";
-            sendResponse(source, "ACK");
-        }
-        
-        // GiveUp,<request>
-        else if (operation.equals("GiveUp")) {
-            sendResponse(source, "ACK");
-        }
-        
-        // Block
-        else if (operation.equals("Block")) {
-            quiescent = true;
-            sendResponse(source, "ACK");
-        }
-        
-        // Unblock
-        else if (operation.equals("Unblock")) {
-            quiescent = false;
+        restoredUserRequests.remove(userRequest);
+        previousUserRequest = currentUserRequest;
+        currentUserRequest = "";
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the give up request from the source.
+     * GiveUp|Get|<key>,<timestamp>,<source>
+     * GiveUp|Increment|<key>,<timestamp>,<source>
+     * GiveUp|Decrement|<key>,<timestamp>,<source>
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleGiveUpRequest(String source, String request) {
+        currentUserRequest = "";
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the block request from the source.
+     * Block
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleBlockRequest(String source, String request) {
+        quiescent = true;
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the unblock request from the source.
+     * Unblock
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleUnblockRequest(String source, String request) {
+        quiescent = false;
+        if (primary) {
             synchronized(quiescenceObj) {
                 quiescenceObj.notify();
             }
-            sendResponse(source, "ACK");
+        }
+        sendResponse(source, "ACK");
+    }
+    
+    /**
+     * Handles the restore request from the source.
+     * Restore
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleRestoreRequest(String source, String request) {
+        StringBuilder sb = new StringBuilder();
+        dataLock.readLock().lock();
+        try {
+            sb.append(checkpoint).append('&');
+            sb.append(logBuilder.toString());
+        } finally {
+            dataLock.readLock().unlock();
         }
         
-        // Restore
-        else if (operation.equals("Restore")) {
-            StringBuilder sb = new StringBuilder();
-            checkpointLock.readLock().lock();
-            logBuilderLock.readLock().lock();
-            try {
-                sb.append(checkpoint).append('|');
-                sb.append(logBuilder.toString());
-            } finally {
-                checkpointLock.readLock().unlock();
-                logBuilderLock.readLock().unlock();
-            }
-            
-            if (sb.charAt(sb.length() - 1) == ';') {
-                sb.setCharAt(sb.length() - 1, '|');
-            } else {
-                sb.append('|');
-            }
-            
-            userRequestsLock.readLock().lock();
-            try {
-                for (String userRequest : userRequests) {
-                    sb.append(userRequest).append(';');
-                }
-                if (userRequests.size() > 0) {
-                    sb.setLength(sb.length() - 1);
-                }
-            } finally {
-                userRequestsLock.readLock().unlock();
-            }
-            
-            String response = sb.toString();
-            sendResponse(source, response);
+        if (sb.charAt(sb.length() - 1) == ';') {
+            sb.setCharAt(sb.length() - 1, '&');
+        } else {
+            sb.append('&');
         }
         
-        // CurrentUserRequest
-        else if (operation.equals("CurrentUserRequest")) {
-            sendResponse(source, currentUserRequest);
+        userRequestsLock.readLock().lock();
+        try {
+            sb.append(serializeUserRequests());
+        } finally {
+            userRequestsLock.readLock().unlock();
         }
         
-        // PreviousUserRequest
-        else if (operation.equals("PreviousUserRequest")) {
-            sendResponse(source, previousUserRequest);
-        }
+        String response = sb.toString();
+        sendResponse(source, response);
+    }
+    
+    /**
+     * Handles the current request from the source.
+     * Current
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handleCurrentRequest(String source, String request) {
+        sendResponse(source, currentUserRequest);
+    }
+    
+    /**
+     * Handles the previous request from the source.
+     * Previous
+     * @param source source of the request in the distributed system
+     * @param request request
+     */
+    protected void handlePreviousRequest(String source, String request) {
+        sendResponse(source, previousUserRequest);
     }
     
     /**
      * Handles user request.
+     * Get|<key>,<timestamp>,<source>
+     * Increment|<key>,<timestamp>,<source>
+     * Decrement|<key>,<timestamp>,<source>
      * @param request request
      */
     private void handleUserRequest(String request) {
-        String[] strs = request.split(",");
-        String source = strs[0];
-        String operation = strs[1];
-        String key = strs[2];
-        
-        // <source>,Get,<key>,<timestamp>
-        if (operation.equals("Get")) {
-            String response;
-            dataLock.readLock().lock();
-            logBuilderLock.writeLock().lock();
-            try {
-                if (data.containsKey(key)) {
-                    response = String.valueOf(data.get(key));
-                } else {
-                    response = "No such key.";
-                }
-                logBuilder.append(request).append(';');
-            } finally {
-                dataLock.readLock().unlock();
-                logBuilderLock.writeLock().unlock();
+        String key = request.substring(request.indexOf('|') + 1, request.indexOf(','));
+        String source = request.substring(request.lastIndexOf(',') + 1);
+        Integer value = null;
+        dataLock.writeLock().lock();
+        try {
+            switch (getRequestType(request)) {
+            case GET:
+                value = get(key);
+                break;
+            case INCREMENT:
+                value = increment(key);
+                break;
+            case DECREMENT:
+                value = decrement(key);
+                break;
+            default:
+                printLog(new StringBuilder("Error: Invalid user request ").append(request).append('!').toString());
+                System.exit(0);
             }
-            sendResponse(source, response);
+            logBuilder.append(request).append(';');
+        } finally {
+            dataLock.writeLock().unlock();
         }
-        
-        // <source>,Increment,<key>,<timestamp>
-        else if (operation.equals("Increment")) {
-            String response;
-            dataLock.writeLock().lock();
-            logBuilderLock.writeLock().lock();
-            try {
-                if (data.containsKey(key)) {
-                    data.put(key, data.get(key) + 1);
-                    response = String.valueOf(data.get(key));
-                } else {
-                    response = "No such key.";
-                }
-                logBuilder.append(request).append(';');
-            } finally {
-                dataLock.writeLock().unlock();
-                logBuilderLock.writeLock().unlock();
-            }
-            sendResponse(source, response);
-        }
-        
-        // <source>,Decrement,<key>,<timestamp>
-        else if (operation.equals("Decrement")) {
-            String response;
-            dataLock.writeLock().lock();
-            logBuilderLock.writeLock().lock();
-            try {
-                if (data.containsKey(key)) {
-                    data.put(key, data.get(key) - 1);
-                    response = String.valueOf(data.get(key));
-                } else {
-                    response = "No such key.";
-                }
-                logBuilder.append(request).append(';');
-            } finally {
-                dataLock.writeLock().unlock();
-                logBuilderLock.writeLock().unlock();
-            }
-            sendResponse(source, response);
-        }
+        String response = value == null ? "No such key." : String.valueOf(value);
+        sendResponse(source, response);
     }
     
     /**
      * Handles restored user request.
+     * Get|<key>,<timestamp>,<source>
+     * Increment|<key>,<timestamp>,<source>
+     * Decrement|<key>,<timestamp>,<source>
      * @param request request
      */
     private void handleRestoredUserRequest(String request) {
-        String[] strs = request.split(",");
-        String operation = strs[1];
-        String key = strs[2];
-        
-        // <source>,Get,<key>,<timestamp>
-        if (operation.equals("Get")) {
-            logBuilderLock.writeLock().lock();
-            try {
-                logBuilder.append(request).append(';');
-            } finally {
-                logBuilderLock.writeLock().unlock();
-            }
-        }
-        
-        // <source>,Increment,<key>,<timestamp>
-        else if (operation.equals("Increment")) {
-            dataLock.writeLock().lock();
-            logBuilderLock.writeLock().lock();
-            try {
-                if (data.containsKey(key)) {
-                    data.put(key, data.get(key) + 1);
-                }
-                logBuilder.append(request).append(';');
-            } finally {
-                dataLock.writeLock().unlock();
-                logBuilderLock.writeLock().unlock();
-            }
-        }
-        
-        // <source>,Decrement,<key>,<timestamp>
-        else if (operation.equals("Decrement")) {
-            dataLock.writeLock().lock();
-            logBuilderLock.writeLock().lock();
-            try {
-                if (data.containsKey(key)) {
-                    data.put(key, data.get(key) - 1);
-                }
-                logBuilder.append(request).append(';');
-            } finally {
-                dataLock.writeLock().unlock();
-                logBuilderLock.writeLock().unlock();
-            }
+        dataLock.writeLock().lock();
+        try {
+            reHandleUserRequest(request);
+            logBuilder.append(request).append(';');
+        } finally {
+            dataLock.writeLock().unlock();
         }
     }
     
     /**
-     * re-handle user request
+     * Re-handles user request.
+     * Get|<key>,<timestamp>,<source>
+     * Increment|<key>,<timestamp>,<source>
+     * Decrement|<key>,<timestamp>,<source>
      * @param request request
      */
     private void reHandleUserRequest(String request) {
-        String[] strs = request.split(",");
-        String operation = strs[1];
-        String key = strs[2];
-        
-        // <source>,Increment,<key>,<timestamp>
-        if (operation.equals("Increment")) {
-            if (data.containsKey(key)) {
-                data.put(key, data.get(key) + 1);
-            }
-        }
-        
-        // <source>,Decrement,<key>,<timestamp>
-        else if (operation.equals("Decrement")) {
-            if (data.containsKey(key)) {
-                data.put(key, data.get(key) - 1);
-            }
+        String key = request.substring(request.indexOf('|') + 1, request.indexOf(','));
+        switch (getRequestType(request)) {
+        case GET:
+            break;
+        case INCREMENT:
+            increment(key);
+            break;
+        case DECREMENT:
+            decrement(key);
+            break;
+        default:
+            printLog(new StringBuilder("Error: Invalid user request ").append(request).append('!').toString());
+            System.exit(0);
         }
     }
     
     /**
-     * Restore data.
+     * Restores data.
      * @param checkpointResponse checkpoint response from another replica
      * @param logResponse log response from another replica
      */
     private void restoreData(String checkpointResponse, String logResponse) {
-        if (checkpointResponse.length() > 0) {
-            String[] strs = checkpointResponse.split(",");
-            data.clear();
-            for (int i = 0; i < strs.length; i += 2) {
-                String key = strs[i];
-                int value = Integer.valueOf(strs[i + 1]);
-                data.put(key, value);
-            }
-        }
-        
+        deserializeData(checkpointResponse);
         if (logResponse.length() > 0) {
             String[] requests = logResponse.split(";");
             for (String request : requests) {
                 userRequestsLock.readLock().lock();
                 try {
                     if (userRequests.contains(request)) {
+                        printLog(new StringBuilder("Handle ").append(request).append('.').toString());
                         handleUserRequest(request);
                         userRequests.remove(request);
                     } else {
+                        printLog(new StringBuilder("Re-handle ").append(request).append('.').toString());
                         reHandleUserRequest(request);
                     }
                 } finally {
@@ -541,7 +615,7 @@ public class ActiveReplica extends Replica {
     }
     
     /**
-     * Restore user requests
+     * Restores user requests
      * @param response response from another replica
      */
     private void restoreUserRequests(String response) {
@@ -564,11 +638,12 @@ public class ActiveReplica extends Replica {
     }
     
     /**
-     * Wait for restoration.
+     * Waits for restoration.
      */
     private void waitForRestoration() {
         synchronized(restorationObj) {
             while (!restored) {
+                printLog("Wait for restoration.");
                 try {
                     restorationObj.wait();
                 } catch (InterruptedException e) {
@@ -579,11 +654,12 @@ public class ActiveReplica extends Replica {
     }
     
     /**
-     * Wait for quiescence.
+     * Waits for quiescence.
      */
     private void waitForQuiescence() {
         synchronized(quiescenceObj) {
             while (quiescent) {
+                printLog("Wait for quiescence.");
                 try {
                     quiescenceObj.wait();
                 } catch (InterruptedException e) {
@@ -594,7 +670,7 @@ public class ActiveReplica extends Replica {
     }
     
     /**
-     * Wait for user requests.
+     * Waits for user requests.
      */
     private void waitForUserRequests() {
         synchronized(userRequestsObj) {
@@ -607,6 +683,7 @@ public class ActiveReplica extends Replica {
                 } finally {
                     userRequestsLock.readLock().unlock();
                 }
+                printLog("Wait for user requests.");
                 try {
                     userRequestsObj.wait();
                 } catch (InterruptedException e) {
@@ -633,16 +710,12 @@ public class ActiveReplica extends Replica {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                checkpointLock.readLock().lock();
-                dataLock.readLock().lock();
-                logBuilderLock.writeLock().lock();
+                dataLock.writeLock().lock();
                 try {
-                    checkpoint = getCheckpoint();
+                    checkpoint = serializeData();
                     logBuilder.setLength(0);
                 } finally {
-                    checkpointLock.readLock().unlock();
-                    dataLock.readLock().unlock();
-                    logBuilderLock.writeLock().unlock();
+                    dataLock.writeLock().unlock();
                 }
             }
         }
@@ -654,7 +727,7 @@ public class ActiveReplica extends Replica {
      */
     private class VoteInitiator implements Runnable {
         /**
-         * Initiate votes.
+         * Initiates votes.
          */
         @Override
         public void run() {
@@ -674,7 +747,7 @@ public class ActiveReplica extends Replica {
                 membershipLock.readLock().lock();
                 try {
                     int numFavor = 1;
-                    Map<String, String> responses = sendRequestToGroup(membership, name, "Vote," + userRequest);
+                    Map<String, String> responses = sendRequestToGroup(membership, name, "Vote|" + userRequest);
                     for (String member : responses.keySet()) {
                         String response = responses.get(member);
                         if (response != null && response.equals("Yes")) {
@@ -690,11 +763,10 @@ public class ActiveReplica extends Replica {
                         } finally {
                             userRequestsLock.writeLock().unlock();
                         }
-                        decisionRequest = "Do," + userRequest;
+                        decisionRequest = "Do|" + userRequest;
                     } else {
-                        decisionRequest = "GiveUp," + userRequest;
+                        decisionRequest = "GiveUp|" + userRequest;
                     }
-                    
                     sendRequestToGroup(membership, name, decisionRequest);
                 } finally {
                     membershipLock.readLock().unlock();
@@ -703,43 +775,11 @@ public class ActiveReplica extends Replica {
         }
     }
     
-    private void printUserRequests() {
-        StringBuilder sb = new StringBuilder();
-        userRequestsLock.readLock().lock();
-        try {
-            for (String request : userRequests) {
-                sb.append(request).append("\n");
-            }
-        } finally {
-            userRequestsLock.readLock().unlock();
-        }
-        System.out.print(sb.toString());
-    }
-    
     /**
-     * Launches an active replica
+     * Launches an active replica.
      * @param args arguments
      */
     public static void main(String[] args) {
-        ActiveReplica node = new ActiveReplica(args[0], args.length >= 2 ? args[1] : null);
-        Scanner scanner = new Scanner(System.in);
-        while (true) {
-            System.out.println();
-            System.out.println("1: get user requests");
-            System.out.println("X: kill");
-            System.out.println("Please input your operation:");
-            String operation = scanner.next();
-            
-            if (operation.toLowerCase().equals("x")) {
-                scanner.close();
-                System.exit(0);
-            }
-            
-            if (operation.equals("1")) {
-                node.printUserRequests();
-            } else {
-                System.out.println("Error: Invalid operation!");
-            }
-        }
+        new ActiveReplica(args[0], args.length >= 2 ? args[1] : null);
     }
 }

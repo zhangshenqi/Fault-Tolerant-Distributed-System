@@ -41,7 +41,7 @@ public class ActiveUser extends User {
         Map<String, String> responses = sendRequestToGroup(Arrays.asList(membership.split(",")), request);
         Set<String> set = new HashSet<String>();
         for (String response : responses.values()) {
-            if (responses != null) {
+            if (response != null) {
                 set.add(response);
             }
         }
@@ -53,9 +53,9 @@ public class ActiveUser extends User {
         
         if (set.size() == 0) {
             return "Error: No server is not available!";
-        } else {
-            return set.iterator().next();
         }
+        
+        return set.iterator().next();
     }
     
     /**
