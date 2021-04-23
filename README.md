@@ -1,2 +1,3 @@
 # Fault-Tolerant-Distributed-System
-Use replication to implement fault-tolerant distributed systems.
+## Introduction
+This project is about using replication to build a fault-tolerant distributed system.
