@@ -1,1 +1,1 @@
-# Active Replication
+# Passive Replication
