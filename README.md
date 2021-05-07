@@ -6,6 +6,7 @@ This project is about using replication to build fault-tolerant distributed syst
 
 [Data Structures](doc/data_structures.md)
 [Active Replication](doc/active_replication.md)
+[Passive Replication](doc/passive_replication.md)
 
 ## Communication
 Nodes utilize both TCP and UDP to communicate. Connection manager is the base class. It hides all network complexities.
