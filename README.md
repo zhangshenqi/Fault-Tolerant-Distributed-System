@@ -35,7 +35,7 @@ Compile [java programs](src):
 ```
 java *.java
 ```
-Prepare [configuration files](conf).
+Prepare [configuration files](conf).\
 Launch the distributed system in no replication mode:
 ```
 java ReplicaManager RM
