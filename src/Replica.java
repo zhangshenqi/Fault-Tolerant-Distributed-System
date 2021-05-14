@@ -23,10 +23,6 @@ public class Replica extends FaultDetector {
      */
     protected Map<String, Integer> data;
     /**
-     * Replica manager.
-     */
-    protected String replicaManager;
-    /**
      * Alive replicas.
      */
     protected List<String> membership;
@@ -90,7 +86,6 @@ public class Replica extends FaultDetector {
             int value = Integer.valueOf(str.substring(index + 1).trim());
             this.data.put(key, value);
         }
-        this.replicaManager = parameters.get("replica_manager").trim();
         this.membership = new ArrayList<String>();
         if (checkpointInterval > 0) {
             this.checkpointInterval = checkpointInterval;
@@ -330,7 +325,6 @@ public class Replica extends FaultDetector {
      */
     private void printParameters() {
         StringBuilder sb = new StringBuilder();
-        sb.append("replica manager = ").append(this.replicaManager).append('\n');
         sb.append("checkpoint interval = ").append(this.checkpointInterval);
         printLog(sb.toString());
     }
