@@ -37,11 +37,11 @@ public class ActiveReplica extends Replica {
      */
     private StringBuilder logBuilder;
     /**
-     * True is this replica finished restoration.
+     * True if this replica finished restoration.
      */
     private boolean restored;
     /**
-     * True is this replica is in quiescent state.
+     * True if this replica is in quiescent state.
      */
     private boolean quiescent;
     /**
@@ -366,7 +366,7 @@ public class ActiveReplica extends Replica {
     protected void handleVoteRequest(String source, String request) {
         // There is a corner case.
         // This replica hasn't finished restoration.
-        // The primary has updated the membership and hasn't receive block request.
+        // The primary has updated the membership and hasn't received block request.
         // So this replica should ensures that it is not restoring.
         waitForRestoration();
         String userRequest = request.substring(request.indexOf('|') + 1);

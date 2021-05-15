@@ -364,7 +364,7 @@ public class PassiveReplica extends Replica {
         sb.append("user_timestamps = ");
         if (!this.userTimestamps.isEmpty()) {
             for (String user : this.userTimestamps.keySet()) {
-                sb.append(user).append(':').append(userTimestamps.get(user)).append(", ");
+                sb.append(user).append(':').append(this.userTimestamps.get(user)).append(", ");
             }
             sb.setLength(sb.length() - 2);
         }
