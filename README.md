@@ -9,7 +9,7 @@ This project is about building fault-tolerant distributed systems based on repli
 
 ## Inheritance
 ```
-                        Connection Manager
+                         Connection Manager
                          /                \
            Fault Detector                  User
                /    \                     /    \
@@ -30,11 +30,11 @@ LFD1 LFD2 LFD3
 
 USR1 USR2 USR3
 ````
-A sample distributed system contains a replica manager, a global fault detector, three local replicas, three replicas and three users.
+A sample distributed system contains a replica manager, a global fault detector, three local fault detectors, three replicas and three users.
 
 Compile [java programs](src):
 ```
-java *.java
+javac *.java
 ```
 Prepare [configuration files](conf).
 

@@ -8,7 +8,7 @@ Timestamps of requests from one user are monotonically increasing. For each user
 Periodically, the primary serializes the data and stored timestamps to be the checkpoint and sends it to all backups. A backup deserializes the data and timestamps. Then it clears those stored user requests which are earlier than the timestamp for each user.
 
 ### Restoration
-After a new backup replica is launched, the primary will get the updated membership. In the next checkpointing, the new backup can restore the data and timestamps.
+After a new backup replica is launched, the primary will get the updated membership. Later, the new backup can restore the data and timestamps with the primary's checkpoint.
 
 ### Upgrade
 When a backup replica upgrades to be the new primary, it silently handles all stored user requests.
@@ -18,10 +18,10 @@ When a backup replica upgrades to be the new primary, it silently handles all st
 
 ## Distributed System in Passive Replication Mode
 ### Speed
-There is no need to ensure total order in passive replication. Each replica can handle multiple concurrent users with readers-writer locks to protect shared data structures. The speed is much faster than that in active replication.
+There is no need to ensure total order in passive replication. Each primary replica can handle multiple concurrent users with readers-writer locks to protect shared data. The speed is much faster than that in active replication.
 
 ### Down Time
-If the primary dies and the future primary has not receive the new membership, there is no primary replica in the system. During this time, users cannot get responses.
+When the primary dies and the future primary has not received the new membership, there is no primary replica in the system. During this time, users cannot get responses.
 
 ### Restoration
-In passive replication mode, there is no separate mechanism for restoration. a new backup replica waits for the primary's checkpoint to restore. If all other replicas dies before the new backup receives the checkpoint, the new backup cannot restore. Compared with that in active replication, restoration in passive replication has more delay and risk.
+In passive replication mode, there is no separate mechanism for restoration. a new backup replica waits for the primary's checkpoint to restore. If all other replicas die before the new backup receives the checkpoint, the new backup cannot restore states. Compared with that in active replication, restoration in passive replication has more delay and risk.
