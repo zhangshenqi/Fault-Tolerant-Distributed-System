@@ -3,7 +3,7 @@
 [Active replica](../src/ActiveReplica.java) extends replica. It is the replica which performs active replication.
 
 ### Total Order
-A voting mechanism is utilized to ensure that all replicas handle user requests in the same order. When receiving a user request, the replica will not handle it immediately. Instead, the request is stored in the user request set. The primary replica will initiate a vote to ask backups whether they also receive this request. Only when all backups answer yes, the primary will ask them to handle it. Otherwise, the primary will tell backups to give up, and nothing will be done.
+A voting mechanism is utilized to ensure that all replicas handle user requests in the same order. When receiving a user request, the replica will not handle it immediately. Instead, the request is stored in the user request set. The primary replica will initiate a vote for this request. It asks backups whether they also receive this request. Only when all backups answer yes, the primary will ask them to handle it. Otherwise, the primary will tell backups to give up, and nothing will be done.
 
 ### Logging and Checkpointing
 Each replica maintains a log and a checkpoint. Whenever a user request is handled, it is appended to the log. Checkpoint is a snapshot of the data. The replica periodically empties the log and updates the checkpoint. Therefore, user requests in the log are all later than the checkpoint.
@@ -11,7 +11,7 @@ Each replica maintains a log and a checkpoint. Whenever a user request is handle
 ### Restoration
 After a replica is launched, it gets to know whether it is primary or backup when receiving the first membership from the replica manager. If it is primary, which means that it is the first replica in the system, no restoration is needed. If the replica is a backup, then it needs to restore states.
 
-Before the restoration, the new replica first asks all other replicas to be quiescent. This ensures that all replicas stop handling user requests. Then it asks other replicas in the membership one by one until a response is received. The response contains three parts: checkpoint, log and unhandled user requests in the set. After deserializing the checkpoint and re-handling requests in the log, the data is restored. Next, the replica will check those unhandled requests in the response. Those that are not in its own user request set will be stored in a separate restored user request set. Later, when handling those requests, the replica will not send responses to users. Finally, the replica asks other replicas to stop the quiescent stage.
+Before the restoration, the new replica first asks all other replicas to be quiescent. This ensures that all replicas stop handling user requests. Then it asks other replicas in the membership one by one until a response is received. The response contains three parts: checkpoint, log and unhandled user requests. After deserializing the checkpoint and re-handling requests in the log, the data is restored. Next, the replica will check those unhandled requests in the response. Those that are not in its own user request set will be stored in a separate restored user request set. Later, after handling those requests, the replica will not send responses to users. Finally, the replica asks other replicas to stop the quiescent stage.
 
 ### Upgrade
 The primary replica in the system can die at any time. If it dies after telling some backups to handle a user request and before telling the remaining, backups may have inconsistent data.

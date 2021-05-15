@@ -5,4 +5,4 @@
 ## Fault Detection System
 Multiple fault detectors can form a multi-level fault detection system. Typically, if every fault detector has one parent except the top one, the system is in a tree structure. If a node in the system becomes alive or dead, the top fault detector will get to know.
 
-If there are many leaves in the tree structure, increasing the level number can average the load in each fault detector. However, the transmission time from leaves to the root also increases. A good fault detection design should reach a balance.
+If there are many leaves in the tree structure, increasing the number of levels can average the load in each fault detector. However, the transmission time from leaves to the root also increases. A good fault detection design should reach a balance.

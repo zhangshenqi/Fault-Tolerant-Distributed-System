@@ -8,7 +8,7 @@ There is a shell after launching the replica manager. You can set the heartbeat 
 [Replica](../src/Replica.java) extends fault detector. In the fault detection system, replicas are leaf nodes. Each replica stores a copy of the data. It receives requests from users, reads or modifies the data and sends responses back. It gets the initial values of the data from the [configuration file](../conf/replica.conf). In the distributed system, the replica which becomes alive first is the primary replica, and others are backup replicas. A replica gets to know whether it is primary or backup when receiving the membership sent from the replica manager.
 
 ## User
-[User](../src/User.java) extends connection manager. It sends user requests to replicas and shows responses. A timestamp is attached to each user request. This ensures that each user request is unique. The user reads the name of the replica manager from the [configuration file](../conf/user.conf). Before sending user requests, it asks the replica manager for the membership. Then it sends the same request to all members in the membership and gets responses.
+[User](../src/User.java) extends connection manager. It sends user requests to replicas and shows responses. A timestamp is attached to each user request. This ensures that each user request is unique. The user reads the name of the replica manager from the [configuration file](../conf/user.conf). Before sending a user request, it asks the replica manager for the membership. Then it sends the same request to all members in the membership and gets responses.
 
 If the shell environment variable ENABLE_AUTO_TEST is set, then the user will automatically send user requests to test the distributed system. Otherwise, there is a shell for manual testing.
 
